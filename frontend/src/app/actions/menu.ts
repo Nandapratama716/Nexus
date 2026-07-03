@@ -1,12 +1,8 @@
 "use server";
 
 import { PrismaClient, menus as MenuType } from "@prisma/client";
+import { prisma } from "../../lib/prisma";
 import { revalidatePath } from "next/cache";
-
-// Initialize Prisma client globally to avoid multiple instances in dev
-const globalForPrisma = global as unknown as { prisma: PrismaClient };
-export const prisma = globalForPrisma.prisma || new PrismaClient();
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 export async function getMenus() {
   const menus = await prisma.menus.findMany({
