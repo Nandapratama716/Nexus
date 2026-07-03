@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+langchain
+langchain-community
+chromadb
+redis
+sse-starlette
+pydantic
