@@ -5,6 +5,7 @@ Sistem Point of Sale (POS) modern dengan chatbot asisten pemesanan berbasis RAG.
 ## Arsitektur Sistem (Polyglot Microservices)
 
 Proyek memisahkan beban kerja untuk performa dan skalabilitas maksimal:
+
 - **Core Service (Golang):** Menangani beban tinggi transaksi, CRUD menu, In-Memory WebSockets untuk KDS, dan Webhook payment (idempotent).
 - **AI Service (Python/FastAPI):** Khusus melayani RAG pipeline (LangChain + ChromaDB) dan streaming respons LLM via SSE.
 - **Sinkronisasi Data:** Menggunakan **Redis Streams** untuk replikasi data menu (durability & replayable) dari Core ke AI service.
@@ -17,7 +18,7 @@ Proyek memisahkan beban kerja untuk performa dan skalabilitas maksimal:
 - **AI/ML:** LangChain, OpenAI API / Ollama.
 - **Payment:** Midtrans Sandbox (QRIS).
 
-## Fitur Teknis Kunci (Portofolio)
+## Fitur Teknis Kunci
 
 - **Cross-Service Auth:** JWT Symmetric Key (HS256) antar container.
 - **Realtime KDS:** In-Memory WebSocket Hub (upgrade path: Redis Pub/Sub).
