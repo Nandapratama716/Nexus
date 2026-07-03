@@ -43,9 +43,11 @@ func main() {
 	menuUC := usecase.NewMenuUsecase(menuRepo)
 	orderUC := usecase.NewOrderUsecase(orderRepo, menuRepo)
 
-	// 4. WebSocket Hub
+	// 4. WebSocket Hub & Mock Midtrans
 	hub := ws.NewHub()
 	go hub.Run()
+
+	mockMidtrans := infrastructure.NewMockMidtransClient("SB-Mid-server-MOCK-KEY-12345")
 
 	// 5. Fiber App
 	app := fiber.New(fiber.Config{
@@ -59,6 +61,7 @@ func main() {
 	delivery.NewAuthHandler(app, authUC)
 	delivery.NewMenuHandler(app, menuUC)
 	delivery.NewOrderHandler(app, orderUC)
+	delivery.NewPaymentHandler(app, orderUC, mockMidtrans)
 
 	// 7. WebSocket endpoint untuk KDS
 	app.Use("/ws", func(c *fiber.Ctx) error {
