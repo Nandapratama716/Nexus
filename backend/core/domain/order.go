@@ -40,7 +40,7 @@ type Order struct {
 	ID            string        `json:"id"`
 	UserID        string        `json:"user_id"`
 	TableNumber   string        `json:"table_number"`
-	Items         []OrderItem   `json:"items"`
+	Items         []OrderItem   `json:"items" gorm:"serializer:json"`
 	TotalAmount   float64       `json:"total_amount"`
 	Status        OrderStatus   `json:"status"`
 	PaymentStatus PaymentStatus `json:"payment_status"`

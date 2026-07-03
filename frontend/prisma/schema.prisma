@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model menus {
+  id           String    @id
+  name         String?
+  description  String?
+  price        Decimal?  @db.Decimal
+  category     String?
+  tags         String?
+  image_url    String?
+  is_available Boolean?
+  created_at   DateTime? @db.Timestamptz(6)
+  updated_at   DateTime? @db.Timestamptz(6)
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model order_items {
+  menu_id   String?
+  menu_name String?
+  quantity  BigInt?
+  price     Decimal? @db.Decimal
+  subtotal  Decimal? @db.Decimal
+
+  @@ignore
+}
+
+model orders {
+  id             String    @id
+  user_id        String?
+  table_number   String?
+  items          String?
+  total_amount   Decimal?  @db.Decimal
+  status         String?
+  payment_status String?
+  payment_id     String?
+  qris_url       String?
+  notes          String?
+  created_at     DateTime? @db.Timestamptz(6)
+  updated_at     DateTime? @db.Timestamptz(6)
+}
+
+model users {
+  id            String    @id
+  name          String?
+  email         String?
+  password_hash String?
+  role          String?
+  created_at    DateTime? @db.Timestamptz(6)
+}

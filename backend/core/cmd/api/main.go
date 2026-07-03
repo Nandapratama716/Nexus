@@ -11,6 +11,7 @@ import (
 
 	delivery "github.com/nanda/nexus/core/delivery/http"
 	ws "github.com/nanda/nexus/core/delivery/ws"
+	"github.com/nanda/nexus/core/domain"
 	"github.com/nanda/nexus/core/infrastructure"
 	"github.com/nanda/nexus/core/repository"
 	"github.com/nanda/nexus/core/usecase"
@@ -26,6 +27,13 @@ func main() {
 	db, err := infrastructure.ConnectDB()
 	if err != nil {
 		log.Fatalf("Gagal koneksi DB: %v", err)
+	}
+
+	// AutoMigrate
+	log.Println("Menjalankan AutoMigrate...")
+	err = db.AutoMigrate(&domain.User{}, &domain.Menu{}, &domain.Order{}, &domain.OrderItem{})
+	if err != nil {
+		log.Fatalf("Gagal AutoMigrate: %v", err)
 	}
 
 	_, err = infrastructure.ConnectRedis()

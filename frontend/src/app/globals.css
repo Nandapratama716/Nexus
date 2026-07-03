@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-primary: #533afd;
+  --color-primary-deep: #4434d4;
+  --color-primary-press: #2e2b8c;
+  --color-brand-dark: #1c1e54;
+  --color-ink: #0d253d;
+  --color-ink-secondary: #273951;
+  --color-ink-mute: #64748d;
+  --color-canvas: #ffffff;
+  --color-canvas-soft: #f6f9fc;
+  --color-canvas-cream: #f5e9d4;
+  --color-hairline: #e3e8ee;
+  
+  --font-sans: "Inter", "SF Pro Display", system-ui, sans-serif;
+}
+
+:root {
+  --background: var(--color-canvas);
+  --foreground: var(--color-ink);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-weight: 300;
+  font-feature-settings: "ss01";
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 300;
+  letter-spacing: -0.04em;
+}
+
+.tabular-nums {
+  font-feature-settings: "tnum";
+  letter-spacing: -0.03em;
+}
+
+/* Utility for Stripi gradient mesh */
+.bg-mesh {
+  background: linear-gradient(135deg, #f5e9d4 0%, #9b6829 20%, #665efd 50%, #533afd 80%, #ea2261 100%);
+  opacity: 0.8;
+}

@@ -21,7 +21,7 @@ type Menu struct {
 	Description string       `json:"description"`
 	Price       float64      `json:"price"`
 	Category    MenuCategory `json:"category"`
-	Tags        []string     `json:"tags"` // e.g. ["manis", "dingin", "populer"]
+	Tags        []string     `json:"tags" gorm:"serializer:json"` // e.g. ["manis", "dingin", "populer"]
 	ImageURL    string       `json:"image_url"`
 	IsAvailable bool         `json:"is_available"`
 	CreatedAt   time.Time    `json:"created_at"`
