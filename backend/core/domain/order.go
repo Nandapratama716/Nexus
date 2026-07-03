@@ -68,5 +68,5 @@ type OrderUsecase interface {
 	GetUserOrders(ctx context.Context, userID string) ([]Order, error)
 	GetActiveOrders(ctx context.Context) ([]Order, error) // KDS
 	UpdateOrderStatus(ctx context.Context, id string, status OrderStatus) error
-	HandlePaymentWebhook(ctx context.Context, paymentID string, status PaymentStatus) error
+	HandlePaymentWebhook(ctx context.Context, orderID string, status PaymentStatus) error
 }
