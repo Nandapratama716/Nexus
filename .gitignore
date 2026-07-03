@@ -1,0 +1,41 @@
+# OS & IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Go (Core Service)
+/core/bin/
+*.exe
+*.test
+*.out
+vendor/
+
+# Python (AI Service)
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Node (Web & Mobile)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.next/
+out/
+build/
+dist/
+.expo/
+*.tsbuildinfo
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Local Data Mounts (Docker/Chroma)
+chroma_db/
+postgres_data/
+redis_data/
