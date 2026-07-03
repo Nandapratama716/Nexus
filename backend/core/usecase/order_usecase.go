@@ -76,10 +76,19 @@ func (u *orderUsecase) UpdateOrderStatus(ctx context.Context, id string, status 
 	return u.orderRepo.UpdateStatus(ctx, id, status)
 }
 
-func (u *orderUsecase) HandlePaymentWebhook(ctx context.Context, paymentID string, status domain.PaymentStatus) error {
-	// Implementasi idempotency: cek status sebelum update
-	// (dalam implementasi lengkap, cari order berdasarkan paymentID)
-	return nil // placeholder — akan diimplementasi di poin Midtrans
+func (u *orderUsecase) HandlePaymentWebhook(ctx context.Context, orderID string, status domain.PaymentStatus) error {
+	order, err := u.orderRepo.GetByID(ctx, orderID)
+	if err != nil {
+		return errors.New("order tidak ditemukan")
+	}
+
+	// Idempotency: jangan update jika status sudah settled/berhasil
+	if order.PaymentStatus == domain.PaymentSettled {
+		return nil
+	}
+
+	// Update payment status (kosongkan paymentID baru karena pakai ID yang lama/mock)
+	return u.orderRepo.UpdatePaymentStatus(ctx, orderID, status, order.PaymentID)
 }
 
 // isValidTransition validasi state machine transisi status
