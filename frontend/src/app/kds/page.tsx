@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 type OrderItem = {
   menu_name: string;
@@ -70,9 +71,14 @@ export default function KDSPage() {
   return (
     <div className="min-h-screen bg-canvas p-8 font-sans">
       <header className="mb-8 flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-light text-ink tracking-tight">Kitchen Display</h1>
-          <p className="text-ink-mute text-[15px] font-light">Realtime order synchronization</p>
+        <div className="flex items-center gap-6">
+          <Link href="/dashboard" className="text-ink-mute hover:text-ink transition-colors flex items-center gap-1 text-[14px]">
+            ← Back
+          </Link>
+          <div>
+            <h1 className="text-3xl font-light text-ink tracking-tight">Kitchen Display</h1>
+            <p className="text-ink-mute text-[15px] font-light">Realtime order synchronization</p>
+          </div>
         </div>
         <div className="flex gap-2 items-center">
           <div className={`w-3 h-3 rounded-full ${ws ? "bg-[#10B981]" : "bg-ruby"} animate-pulse`} />

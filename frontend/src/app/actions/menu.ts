@@ -1,6 +1,6 @@
 "use server";
 
-import { PrismaClient, menus as MenuType } from "../../generated/prisma";
+import { PrismaClient, menus as MenuType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 
 // Initialize Prisma client globally to avoid multiple instances in dev

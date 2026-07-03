@@ -1,7 +1,12 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import React from "react";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+
   return (
     <div className="flex h-screen bg-canvas-soft font-sans font-light">
       {/* Sidebar (Dark Chrome per DESIGN.md) */}
@@ -11,13 +16,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
         
         <nav className="flex flex-col gap-2">
-          <Link href="/dashboard" className="px-4 py-2 rounded-sm hover:bg-white/10 transition-colors text-[15px]">
+          <Link href="/dashboard" className={`px-4 py-2 rounded-sm transition-colors text-[15px] ${pathname === "/dashboard" ? "bg-white/10 text-white" : "text-white/70 hover:bg-white/5"}`}>
             Overview
           </Link>
-          <Link href="/dashboard/menu" className="px-4 py-2 rounded-sm bg-white/10 text-white text-[15px]">
+          <Link href="/dashboard/menu" className={`px-4 py-2 rounded-sm transition-colors text-[15px] ${pathname === "/dashboard/menu" ? "bg-white/10 text-white" : "text-white/70 hover:bg-white/5"}`}>
             Menu Manager
           </Link>
-          <Link href="/kds" className="px-4 py-2 rounded-sm hover:bg-white/10 transition-colors text-[15px]">
+          <Link href="/kds" className="px-4 py-2 rounded-sm text-white/70 hover:bg-white/5 transition-colors text-[15px]">
             Open KDS
           </Link>
         </nav>
