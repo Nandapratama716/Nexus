@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/joho/godotenv"
 
 	delivery "github.com/nanda/nexus/core/delivery/http"
 	ws "github.com/nanda/nexus/core/delivery/ws"
@@ -16,6 +17,11 @@ import (
 )
 
 func main() {
+	// 0. Load .env file (dari root project)
+	if err := godotenv.Load("../../.env"); err != nil {
+		log.Println("Warning: tidak menemukan file .env, menggunakan default env vars")
+	}
+
 	// 1. Infrastructure — koneksi DB dan Redis
 	db, err := infrastructure.ConnectDB()
 	if err != nil {
