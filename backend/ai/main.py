@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import CORE_SERVICE_URL
+from app.core.config import CORE_SERVICE_URL, ALLOWED_ORIGINS
 from app.repositories.chroma_repo import get_chroma_repo
 from app.routers.chat_router import router as chat_router
 from app.workers.menu_sync import run_menu_sync_worker
@@ -78,7 +78,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

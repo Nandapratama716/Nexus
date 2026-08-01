@@ -228,18 +228,38 @@ class TestHealthEndpoint:
         assert isinstance(resp.json()["chroma_docs"], int)
 
 
+import jwt
+from app.core.config import JWT_SECRET
+
+
+def auth_headers(user_id: str = "user-1", role: str = "customer") -> dict:
+    token = jwt.encode({"user_id": user_id, "role": role}, JWT_SECRET, algorithm="HS256")
+    return {"Authorization": f"Bearer {token}"}
+
+
 class TestChatEndpoint:
+    def test_chat_unauthenticated_returns_401(self, client):
+        resp = client.post("/api/v1/ai/chat", json={"message": "halo", "session_id": "s1"})
+        assert resp.status_code == 401
+
+    def test_chat_invalid_token_returns_401(self, client):
+        resp = client.post(
+            "/api/v1/ai/chat",
+            json={"message": "halo", "session_id": "s1"},
+            headers={"Authorization": "Bearer invalid_token_str"},
+        )
+        assert resp.status_code == 401
+
     def test_chat_requires_body(self, client):
-        resp = client.post("/api/v1/ai/chat", json={})
+        resp = client.post("/api/v1/ai/chat", json={}, headers=auth_headers())
         assert resp.status_code == 422
 
     def test_chat_missing_session_id(self, client):
-        resp = client.post("/api/v1/ai/chat", json={"message": "halo"})
+        resp = client.post("/api/v1/ai/chat", json={"message": "halo"}, headers=auth_headers())
         assert resp.status_code == 422
 
     def test_chat_valid_request_streams(self, client):
-        """BUG CHECK: valid request returns 200 text/event-stream.
-        Uses an actual async generator (not AsyncMock) to simulate streaming."""
+        """BUG CHECK: valid request with JWT returns 200 text/event-stream."""
 
         async def _fake_stream(_msg: str):
             yield "data: Halo\n\n"
@@ -249,7 +269,9 @@ class TestChatEndpoint:
             resp = client.post(
                 "/api/v1/ai/chat",
                 json={"message": "menu apa yang tersedia?", "session_id": "test-session"},
+                headers=auth_headers(),
             )
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers.get("content-type", "")
         assert "Halo" in resp.text
+

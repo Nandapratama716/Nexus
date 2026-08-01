@@ -16,3 +16,11 @@ REDIS_URL: str = f"redis://{REDIS_HOST}:{REDIS_PORT}"
 
 # Go Core Service
 CORE_SERVICE_URL: str = os.getenv("CORE_SERVICE_URL", "http://localhost:8080")
+
+# Security & CORS
+JWT_SECRET: str = os.getenv("JWT_SECRET", "default-dev-secret-change-in-production")
+ALLOWED_ORIGINS: list[str] = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",")
+    if origin.strip()
+]
