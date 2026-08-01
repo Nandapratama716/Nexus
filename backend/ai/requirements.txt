@@ -1,8 +1,10 @@
 fastapi
-uvicorn
+uvicorn[standard]
 langchain
 langchain-community
+langchain-core
 chromadb
 redis
 sse-starlette
 pydantic
+httpx

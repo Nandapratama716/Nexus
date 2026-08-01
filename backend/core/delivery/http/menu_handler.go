@@ -3,15 +3,20 @@ package http
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/nanda/nexus/core/domain"
+	"github.com/nanda/nexus/core/infrastructure"
 	"github.com/nanda/nexus/core/middleware"
 )
 
 type MenuHandler struct {
-	menuUsecase domain.MenuUsecase
+	menuUsecase     domain.MenuUsecase
+	streamPublisher *infrastructure.MenuStreamPublisher
 }
 
-func NewMenuHandler(app fiber.Router, us domain.MenuUsecase) {
-	handler := &MenuHandler{menuUsecase: us}
+func NewMenuHandler(app fiber.Router, us domain.MenuUsecase, publisher *infrastructure.MenuStreamPublisher) {
+	handler := &MenuHandler{
+		menuUsecase:     us,
+		streamPublisher: publisher,
+	}
 
 	menus := app.Group("/api/v1/menus")
 	menus.Get("/", handler.GetAll)
@@ -47,6 +52,10 @@ func (h *MenuHandler) Create(c *fiber.Ctx) error {
 	if err := h.menuUsecase.CreateMenu(c.Context(), &menu); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	// Publish ke Redis Stream → AI Service akan update ChromaDB
+	go h.streamPublisher.Publish(c.Context(), "create", menu.ID, menu)
+
 	return c.Status(fiber.StatusCreated).JSON(menu)
 }
 
@@ -59,12 +68,21 @@ func (h *MenuHandler) Update(c *fiber.Ctx) error {
 	if err := h.menuUsecase.UpdateMenu(c.Context(), &menu); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	// Publish ke Redis Stream
+	go h.streamPublisher.Publish(c.Context(), "update", menu.ID, menu)
+
 	return c.JSON(fiber.Map{"message": "Menu berhasil diperbarui"})
 }
 
 func (h *MenuHandler) Delete(c *fiber.Ctx) error {
-	if err := h.menuUsecase.DeleteMenu(c.Context(), c.Params("id")); err != nil {
+	id := c.Params("id")
+	if err := h.menuUsecase.DeleteMenu(c.Context(), id); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	// Publish ke Redis Stream
+	go h.streamPublisher.Publish(c.Context(), "delete", id, nil)
+
 	return c.JSON(fiber.Map{"message": "Menu berhasil dihapus"})
 }

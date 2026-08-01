@@ -1,32 +1,33 @@
-import asyncio
+"""
+Chat Router
+SSE streaming endpoint powered by the RAG pipeline (ChromaDB + Ollama).
+"""
+
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from app.schemas.chat import ChatRequest
 
-# from app.services.chat_service import ChatService
-# from app.core.security import verify_jwt
+from app.schemas.chat import ChatRequest
+from app.services.chat_service import generate_rag_stream
 
 router = APIRouter(prefix="/api/v1/ai", tags=["chat"])
 
-async def mock_chat_stream(query: str):
-    """Mock generator untuk demonstrasi Server-Sent Events (SSE) streaming"""
-    tokens = ["Saya ", "adalah ", "AI ", "Assistant. ", "Anda ", "bertanya: ", f"{query}"]
-    for token in tokens:
-        await asyncio.sleep(0.1) # Simulasi network/LLM latency
-        yield f"data: {token}\n\n"
-    
-    yield "data: [DONE]\n\n"
 
 @router.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     """
-    Endpoint SSE Streaming.
-    Di dunia nyata, dependency injection digunakan di sini:
-    def chat_endpoint(request: ChatRequest, service: ChatService = Depends(get_chat_service)):
-        response_generator = service.generate_stream(request.message)
+    SSE streaming chat endpoint.
+
+    Returns a text/event-stream response where each token is pushed as:
+        data: <token>
+
+    Terminates with:
+        data: [DONE]
     """
-    
     return StreamingResponse(
-        mock_chat_stream(request.message),
-        media_type="text/event-stream"
+        generate_rag_stream(request.message),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # disable Nginx buffering in production
+        },
     )

@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/joho/godotenv"
@@ -36,10 +37,13 @@ func main() {
 		log.Fatalf("Gagal AutoMigrate: %v", err)
 	}
 
-	_, err = infrastructure.ConnectRedis()
+	rdb, err := infrastructure.ConnectRedis()
 	if err != nil {
 		log.Fatalf("Gagal koneksi Redis: %v", err)
 	}
+
+	// Redis Stream publisher untuk AI Service sync
+	menuPublisher := infrastructure.NewMenuStreamPublisher(rdb)
 
 	// 2. Repositories (injeksi db)
 	userRepo := repository.NewUserRepository(db)
@@ -62,12 +66,17 @@ func main() {
 		AppName: "Nexus Core Service v1.0",
 	})
 
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "*",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+		AllowMethods: "GET, POST, HEAD, PUT, DELETE, PATCH",
+	}))
 	app.Use(logger.New())
 	app.Use(recover.New())
 
 	// 6. HTTP Handlers (injeksi usecases)
 	delivery.NewAuthHandler(app, authUC)
-	delivery.NewMenuHandler(app, menuUC)
+	delivery.NewMenuHandler(app, menuUC, menuPublisher)
 	delivery.NewOrderHandler(app, orderUC)
 	delivery.NewPaymentHandler(app, orderUC, mockMidtrans)
 

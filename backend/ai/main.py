@@ -1,11 +1,80 @@
+"""
+Nexus AI Microservice — main entry point.
+
+Startup sequence:
+1. Fetch all current menus from Go Core Service.
+2. Seed ChromaDB with menu embeddings.
+3. Register HTTP routers.
+"""
+
+import asyncio
+import logging
+import httpx
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import asyncio
-from sse_starlette.sse import EventSourceResponse
-from app.rag import get_chat_response
 
-app = FastAPI(title="Nexus AI Microservice", version="1.0.0")
+from app.core.config import CORE_SERVICE_URL
+from app.repositories.chroma_repo import get_chroma_repo
+from app.routers.chat_router import router as chat_router
+from app.workers.menu_sync import run_menu_sync_worker
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+async def _seed_menus_from_core() -> None:
+    """
+    Fetch menus from Go Core Service and bulk-upsert into ChromaDB.
+    Gracefully skips if Core Service is unavailable at startup.
+    """
+    url = f"{CORE_SERVICE_URL}/api/v1/menus"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            menus = response.json()
+
+        repo = get_chroma_repo()
+        repo.seed_from_list(menus)
+        logger.info("Seeded %d menus from Core Service into ChromaDB.", len(menus))
+    except httpx.ConnectError:
+        logger.warning(
+            "Core Service unreachable at %s — ChromaDB will start empty. "
+            "Menus will be added via Redis Streams as they are created/updated.",
+            url,
+        )
+    except Exception as exc:
+        logger.error("Failed to seed menus: %s", exc)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan: runs on startup and shutdown."""
+    logger.info("Starting Nexus AI Service...")
+    await _seed_menus_from_core()
+
+    # Start Redis Streams consumer as background task
+    worker_task = asyncio.create_task(run_menu_sync_worker())
+    logger.info("Menu sync worker started.")
+    logger.info("Nexus AI Service ready.")
+    yield
+    # Graceful shutdown
+    worker_task.cancel()
+    try:
+        await worker_task
+    except asyncio.CancelledError:
+        pass
+    logger.info("Nexus AI Service shutting down.")
+
+
+app = FastAPI(
+    title="Nexus AI Microservice",
+    version="2.0.0",
+    description="RAG-powered AI Order Assistant (ChromaDB + Ollama)",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -15,24 +84,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class ChatRequest(BaseModel):
-    message: str
-    user_id: str
-    session_id: str
+# Routers
+app.include_router(chat_router)
+
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "service": "nexus-ai"}
-
-async def event_generator(msg: str):
-    # Placeholder untuk streaming respons kata-per-kata
-    # (Di tahap lanjut akan diganti stream asli dari LangChain)
-    full_response = get_chat_response(msg)
-    for word in full_response.split():
-        yield {"data": word + " "}
-        await asyncio.sleep(0.05)
-    yield {"data": "[DONE]"}
-
-@app.post("/api/v1/ai/chat")
-async def chat_endpoint(req: ChatRequest):
-    return EventSourceResponse(event_generator(req.message))
+    repo = get_chroma_repo()
+    return {
+        "status": "ok",
+        "service": "nexus-ai",
+        "chroma_docs": repo.count(),
+    }
