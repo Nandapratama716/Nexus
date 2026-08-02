@@ -24,6 +24,7 @@ type Menu struct {
 	Tags        []string     `json:"tags" gorm:"serializer:json"` // e.g. ["manis", "dingin", "populer"]
 	ImageURL    string       `json:"image_url"`
 	IsAvailable bool         `json:"is_available"`
+	StockQty    int          `json:"stock_qty"`
 	CreatedAt   time.Time    `json:"created_at"`
 	UpdatedAt   time.Time    `json:"updated_at"`
 }

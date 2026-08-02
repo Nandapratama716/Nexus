@@ -6,6 +6,8 @@ export interface MenuItem {
   price: number;
   image_url?: string;
   category: string;
+  stock_qty?: number;
+  is_available?: boolean;
 }
 
 export interface CartItem {

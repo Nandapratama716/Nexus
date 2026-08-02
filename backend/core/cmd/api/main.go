@@ -54,7 +54,7 @@ func main() {
 	// 3. Usecases (injeksi repositories)
 	authUC := usecase.NewAuthUsecase(userRepo)
 	menuUC := usecase.NewMenuUsecase(menuRepo)
-	orderUC := usecase.NewOrderUsecase(orderRepo, menuRepo)
+	orderUC := usecase.NewOrderUsecase(orderRepo, menuRepo, menuPublisher)
 
 	// 4. WebSocket Hub & Mock Midtrans
 	hub := ws.NewHub()

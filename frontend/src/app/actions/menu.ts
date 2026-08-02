@@ -13,6 +13,7 @@ export async function getMenus() {
   return menus.map((menu: MenuType) => ({
     ...menu,
     price: menu.price ? Number(menu.price.toString()) : 0,
+    stock_qty: menu.stock_qty ?? 0,
     tags: menu.tags ? (typeof menu.tags === "string" ? JSON.parse(menu.tags) : menu.tags) : [],
   }));
 }
@@ -23,9 +24,11 @@ export async function createMenu(data: {
   price: number;
   category: string;
   tags: string[];
+  stock_qty: number;
 }) {
   const id = `menu-${Date.now()}`;
   const now = new Date();
+  const isAvailable = data.stock_qty > 0;
 
   // 1. Save directly to Postgres via Prisma
   await prisma.menus.create({
@@ -36,7 +39,8 @@ export async function createMenu(data: {
       price: data.price,
       category: data.category,
       tags: JSON.stringify(data.tags),
-      is_available: true,
+      stock_qty: data.stock_qty,
+      is_available: isAvailable,
       created_at: now,
       updated_at: now,
     },
@@ -57,7 +61,8 @@ export async function createMenu(data: {
         price: data.price,
         category: data.category,
         tags: data.tags,
-        is_available: true,
+        stock_qty: data.stock_qty,
+        is_available: isAvailable,
       }),
     });
   } catch (err) {

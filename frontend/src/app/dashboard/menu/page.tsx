@@ -12,6 +12,7 @@ export default function MenuManager() {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("food");
   const [price, setPrice] = useState("");
+  const [stockQty, setStockQty] = useState("25");
   const [description, setDescription] = useState("");
   const [tagsInput, setTagsInput] = useState("");
 
@@ -47,10 +48,13 @@ export default function MenuManager() {
         .map((t) => t.trim())
         .filter(Boolean);
 
+      const parsedStock = parseInt(stockQty, 10) || 0;
+
       await createMenu({
         name,
         category,
         price: parseFloat(price) || 0,
+        stock_qty: parsedStock,
         description,
         tags,
       });
@@ -58,6 +62,7 @@ export default function MenuManager() {
       // Reset form & close modal
       setName("");
       setPrice("");
+      setStockQty("25");
       setDescription("");
       setTagsInput("");
       setIsModalOpen(false);
@@ -76,7 +81,7 @@ export default function MenuManager() {
         <div>
           <h1 className="text-3xl font-light text-ink tracking-tight mb-2">Menu Manager</h1>
           <p className="text-[15px] text-ink-mute font-light">
-            Manage your products, pricing, and availability. Changes sync to AI & KDS in real-time.
+            Manage your products, pricing, stock, and availability. Auto-syncs to AI & KDS.
           </p>
         </div>
         <button
@@ -95,6 +100,7 @@ export default function MenuManager() {
               <th className="p-4 text-[13px] font-normal text-ink-mute uppercase tracking-widest">Item Name</th>
               <th className="p-4 text-[13px] font-normal text-ink-mute uppercase tracking-widest">Category</th>
               <th className="p-4 text-[13px] font-normal text-ink-mute uppercase tracking-widest text-right">Price</th>
+              <th className="p-4 text-[13px] font-normal text-ink-mute uppercase tracking-widest text-center">Stock</th>
               <th className="p-4 text-[13px] font-normal text-ink-mute uppercase tracking-widest text-center">Status</th>
               <th className="p-4 text-[13px] font-normal text-ink-mute uppercase tracking-widest text-right">Actions</th>
             </tr>
@@ -102,47 +108,65 @@ export default function MenuManager() {
           <tbody>
             {menus.length === 0 ? (
               <tr>
-                <td colSpan={5} className="p-8 text-center text-ink-mute font-light">
+                <td colSpan={6} className="p-8 text-center text-ink-mute font-light">
                   No menus found. Click &quot;+ Add New Menu&quot; to create your first item.
                 </td>
               </tr>
             ) : (
-              menus.map((menu) => (
-                <tr key={menu.id} className="border-b border-hairline hover:bg-canvas-soft transition-colors">
-                  <td className="p-4">
-                    <div className="text-[15px] text-ink font-medium">{menu.name}</div>
-                    <div className="text-[13px] text-ink-mute font-light">{menu.description || "-"}</div>
-                    {menu.tags && menu.tags.length > 0 && (
-                      <div className="flex gap-1 mt-1">
-                        {menu.tags.map((tag: string, idx: number) => (
-                          <span key={idx} className="text-[10px] bg-canvas-soft border border-hairline text-ink-mute px-2 py-0.5 rounded-full">
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </td>
-                  <td className="p-4 text-[15px] text-ink capitalize">{menu.category}</td>
-                  <td className="p-4 text-right tabular-nums text-[15px] text-ink">
-                    Rp {menu.price.toLocaleString("id-ID")}
-                  </td>
-                  <td className="p-4 text-center">
-                    <button
-                      onClick={() => handleToggle(menu.id, menu.is_available)}
-                      className={`text-[11px] px-3 py-1 rounded-full cursor-pointer transition-colors ${
-                        menu.is_available ? "bg-primary-soft/20 text-primary-deep" : "bg-hairline text-ink-mute"
-                      }`}
-                    >
-                      {menu.is_available ? "Available" : "Sold Out"}
-                    </button>
-                  </td>
-                  <td className="p-4 text-right">
-                    <button onClick={() => handleDelete(menu.id)} className="text-[13px] text-ruby hover:underline cursor-pointer">
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))
+              menus.map((menu) => {
+                const stock = menu.stock_qty ?? 0;
+                const isSoldOut = !menu.is_available || stock <= 0;
+
+                return (
+                  <tr key={menu.id} className="border-b border-hairline hover:bg-canvas-soft transition-colors">
+                    <td className="p-4">
+                      <div className="text-[15px] text-ink font-medium">{menu.name}</div>
+                      <div className="text-[13px] text-ink-mute font-light">{menu.description || "-"}</div>
+                      {menu.tags && menu.tags.length > 0 && (
+                        <div className="flex gap-1 mt-1">
+                          {menu.tags.map((tag: string, idx: number) => (
+                            <span key={idx} className="text-[10px] bg-canvas-soft border border-hairline text-ink-mute px-2 py-0.5 rounded-full">
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-4 text-[15px] text-ink capitalize">{menu.category}</td>
+                    <td className="p-4 text-right tabular-nums text-[15px] text-ink">
+                      Rp {menu.price.toLocaleString("id-ID")}
+                    </td>
+                    <td className="p-4 text-center">
+                      <span
+                        className={`text-[12px] font-medium px-2.5 py-1 rounded-full ${
+                          stock > 5
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            : stock > 0
+                            ? "bg-amber-50 text-amber-700 border border-amber-200"
+                            : "bg-rose-50 text-rose-700 border border-rose-200"
+                        }`}
+                      >
+                        {stock > 0 ? `${stock} porsi` : "Habis"}
+                      </span>
+                    </td>
+                    <td className="p-4 text-center">
+                      <button
+                        onClick={() => handleToggle(menu.id, menu.is_available)}
+                        className={`text-[11px] px-3 py-1 rounded-full cursor-pointer transition-colors ${
+                          !isSoldOut ? "bg-primary-soft/20 text-primary-deep" : "bg-hairline text-ink-mute"
+                        }`}
+                      >
+                        {!isSoldOut ? "Available" : "Sold Out"}
+                      </button>
+                    </td>
+                    <td className="p-4 text-right">
+                      <button onClick={() => handleDelete(menu.id)} className="text-[13px] text-ruby hover:underline cursor-pointer">
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -174,7 +198,7 @@ export default function MenuManager() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[13px] text-ink-mute uppercase tracking-widest mb-1">
                     Category *
@@ -182,7 +206,7 @@ export default function MenuManager() {
                   <select
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    className="w-full px-4 py-2 border border-hairline rounded-lg text-[15px] text-ink focus:outline-none focus:border-primary capitalize"
+                    className="w-full px-3 py-2 border border-hairline rounded-lg text-[14px] text-ink focus:outline-none focus:border-primary capitalize"
                   >
                     <option value="food">Food</option>
                     <option value="drink">Drink</option>
@@ -201,7 +225,22 @@ export default function MenuManager() {
                     placeholder="25000"
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
-                    className="w-full px-4 py-2 border border-hairline rounded-lg text-[15px] text-ink focus:outline-none focus:border-primary"
+                    className="w-full px-3 py-2 border border-hairline rounded-lg text-[14px] text-ink focus:outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[13px] text-ink-mute uppercase tracking-widest mb-1">
+                    Initial Stock *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    placeholder="25"
+                    value={stockQty}
+                    onChange={(e) => setStockQty(e.target.value)}
+                    className="w-full px-3 py-2 border border-hairline rounded-lg text-[14px] text-ink focus:outline-none focus:border-primary"
                   />
                 </div>
               </div>

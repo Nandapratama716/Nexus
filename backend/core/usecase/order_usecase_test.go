@@ -60,7 +60,10 @@ func newMockMenuRepoForOrder(menus map[string]*domain.Menu) *mockMenuRepoForOrde
 
 func (m *mockMenuRepoForOrder) Create(ctx context.Context, menu *domain.Menu) error { return nil }
 func (m *mockMenuRepoForOrder) GetAll(ctx context.Context) ([]domain.Menu, error) { return nil, nil }
-func (m *mockMenuRepoForOrder) Update(ctx context.Context, menu *domain.Menu) error { return nil }
+func (m *mockMenuRepoForOrder) Update(ctx context.Context, menu *domain.Menu) error {
+	m.menus[menu.ID] = menu
+	return nil
+}
 func (m *mockMenuRepoForOrder) Delete(ctx context.Context, id string) error { return nil }
 func (m *mockMenuRepoForOrder) GetByID(ctx context.Context, id string) (*domain.Menu, error) {
 	if menu, ok := m.menus[id]; ok {
@@ -148,14 +151,27 @@ func TestOrderUsecase_CreateOrder(t *testing.T) {
 			wantErr:   true,
 		},
 		{
-			name: "sukses — item notes dipertahankan",
+			name: "gagal — stok menu tidak mencukupi",
 			order: &domain.Order{
 				UserID: "user-1",
-				Items:  []domain.OrderItem{{MenuID: "menu-1", Quantity: 1, Notes: "pedas level 3"}},
+				Items:  []domain.OrderItem{{MenuID: "menu-limited", Quantity: 5}},
 			},
-			menuStore: availableMenus,
+			menuStore: map[string]*domain.Menu{
+				"menu-limited": {ID: "menu-limited", Name: "Nasi Bebek", Price: 35000, StockQty: 2, IsAvailable: true},
+			},
+			wantErr: true,
+		},
+		{
+			name: "sukses — stok berkurang dan auto-sold out saat stok 0",
+			order: &domain.Order{
+				UserID: "user-1",
+				Items:  []domain.OrderItem{{MenuID: "menu-last-two", Quantity: 2}},
+			},
+			menuStore: map[string]*domain.Menu{
+				"menu-last-two": {ID: "menu-last-two", Name: "Es Alpukat", Price: 15000, StockQty: 2, IsAvailable: true},
+			},
 			wantErr:   false,
-			wantTotal: 25000,
+			wantTotal: 30000,
 		},
 	}
 

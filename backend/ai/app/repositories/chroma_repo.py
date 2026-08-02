@@ -30,7 +30,9 @@ def _build_menu_document(menu: dict) -> str:
             tags = [tags]
 
     tags_str = ", ".join(tags) if tags else "-"
-    available = "tersedia" if menu.get("is_available", True) else "tidak tersedia"
+    stock_qty = menu.get("stock_qty", 0)
+    is_avail = menu.get("is_available", True) and (stock_qty > 0 if "stock_qty" in menu else True)
+    status_str = f"tersedia (sisa stok {stock_qty})" if is_avail else "tidak tersedia (stok habis)"
     price = menu.get("price", 0)
 
     return (
@@ -39,7 +41,7 @@ def _build_menu_document(menu: dict) -> str:
         f"Kategori: {menu.get('category', '')}. "
         f"Harga: Rp {price:,}. "
         f"Tag: {tags_str}. "
-        f"Status: {available}."
+        f"Status: {status_str}."
     )
 
 

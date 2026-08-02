@@ -40,17 +40,31 @@ export default function MenuScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: MenuItem }) => (
-    <View style={styles.card}>
-      <View style={styles.cardInfo}>
-        <Text style={styles.menuName}>{item.name}</Text>
-        <Text style={styles.menuPrice}>Rp {item.price.toLocaleString("id-ID")}</Text>
+  const renderItem = ({ item }: { item: MenuItem }) => {
+    const stock = item.stock_qty ?? 0;
+    const isSoldOut = !item.is_available || (item.stock_qty !== undefined && item.stock_qty <= 0);
+
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardInfo}>
+          <Text style={styles.menuName}>{item.name}</Text>
+          <Text style={styles.menuPrice}>Rp {item.price.toLocaleString("id-ID")}</Text>
+          {item.stock_qty !== undefined && item.stock_qty > 0 && (
+            <Text style={styles.stockBadge}>Sisa {item.stock_qty} porsi</Text>
+          )}
+        </View>
+        <TouchableOpacity
+          style={[styles.addButton, isSoldOut && styles.addButtonDisabled]}
+          onPress={() => addItem(item)}
+          disabled={isSoldOut}
+        >
+          <Text style={[styles.addButtonText, isSoldOut && styles.addButtonTextDisabled]}>
+            {isSoldOut ? "Sold Out" : "Add"}
+          </Text>
+        </TouchableOpacity>
       </View>
-      <TouchableOpacity style={styles.addButton} onPress={() => addItem(item)}>
-        <Text style={styles.addButtonText}>Add</Text>
-      </TouchableOpacity>
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -141,14 +155,26 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#64748b",
   },
+  stockBadge: {
+    fontSize: 12,
+    color: "#10B981",
+    marginTop: 4,
+    fontWeight: "500",
+  },
   addButton: {
     backgroundColor: "#eff6ff", // light primary
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 100,
   },
+  addButtonDisabled: {
+    backgroundColor: "#f1f5f9",
+  },
   addButtonText: {
     color: "#533afd",
     fontWeight: "500",
+  },
+  addButtonTextDisabled: {
+    color: "#94a3b8",
   },
 });

@@ -3,18 +3,28 @@ package usecase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 
 	"github.com/nanda/nexus/core/domain"
 )
 
+type MenuPublisher interface {
+	Publish(ctx context.Context, action, menuID string, payload interface{})
+}
+
 type orderUsecase struct {
 	orderRepo domain.OrderRepository
 	menuRepo  domain.MenuRepository
+	publisher MenuPublisher
 }
 
-func NewOrderUsecase(orderRepo domain.OrderRepository, menuRepo domain.MenuRepository) domain.OrderUsecase {
-	return &orderUsecase{orderRepo: orderRepo, menuRepo: menuRepo}
+func NewOrderUsecase(orderRepo domain.OrderRepository, menuRepo domain.MenuRepository, publisher ...MenuPublisher) domain.OrderUsecase {
+	var pub MenuPublisher
+	if len(publisher) > 0 {
+		pub = publisher[0]
+	}
+	return &orderUsecase{orderRepo: orderRepo, menuRepo: menuRepo, publisher: pub}
 }
 
 func (u *orderUsecase) CreateOrder(ctx context.Context, order *domain.Order) error {
@@ -35,8 +45,10 @@ func (u *orderUsecase) CreateOrder(ctx context.Context, order *domain.Order) err
 		order.PaymentMethod = domain.PaymentQRIS
 	}
 
-	// Hitung total dan snapshot harga dari menu terkini
+	// Hitung total, validasi stok, dan snapshot harga dari menu terkini
 	var total float64
+	menusToUpdate := make([]*domain.Menu, 0, len(order.Items))
+
 	for i, item := range order.Items {
 		menu, err := u.menuRepo.GetByID(ctx, item.MenuID)
 		if err != nil {
@@ -46,12 +58,34 @@ func (u *orderUsecase) CreateOrder(ctx context.Context, order *domain.Order) err
 			return errors.New("menu " + menu.Name + " sedang tidak tersedia")
 		}
 
+		// Validasi stok kuantitas jika stok diatur (> 0)
+		if menu.StockQty > 0 && menu.StockQty < item.Quantity {
+			return fmt.Errorf("stok menu %s tidak mencukupi (sisa %d)", menu.Name, menu.StockQty)
+		}
+
+		// Update stok & status ketersediaan jika stok diatur (> 0)
+		if menu.StockQty > 0 {
+			menu.StockQty -= item.Quantity
+			if menu.StockQty <= 0 {
+				menu.StockQty = 0
+				menu.IsAvailable = false // Auto-sold out trigger
+			}
+			menusToUpdate = append(menusToUpdate, menu)
+		}
+
 		// Snapshot harga saat order dibuat (immutable)
 		order.Items[i].MenuName = menu.Name
 		order.Items[i].Price = menu.Price
 		order.Items[i].Subtotal = menu.Price * float64(item.Quantity)
-		// Notes per item dipertahankan dari request
 		total += order.Items[i].Subtotal
+	}
+
+	// Simpan perubahan stok & publish event sync ke Redis Stream
+	for _, menu := range menusToUpdate {
+		_ = u.menuRepo.Update(ctx, menu)
+		if u.publisher != nil {
+			u.publisher.Publish(ctx, "update", menu.ID, menu)
+		}
 	}
 
 	order.TotalAmount = math.Round(total*100) / 100
@@ -135,9 +169,8 @@ func isValidTransition(current, next domain.OrderStatus) bool {
 
 // formatCurrency format angka ke string sederhana
 func formatCurrency(amount float64) string {
-	// Simple int formatting for error messages
 	if amount == float64(int64(amount)) {
-		return string(rune(int64(amount)))
+		return fmt.Sprintf("%.0f", amount)
 	}
-	return ""
+	return fmt.Sprintf("%.2f", amount)
 }
