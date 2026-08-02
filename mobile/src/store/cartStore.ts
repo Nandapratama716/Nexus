@@ -20,12 +20,20 @@ interface CartState {
   items: CartItem[];
   tableNumber: string;
   orderType: "dine_in" | "takeaway";
+  promoCode: string;
+  lastOrderId: string;
   setTableNumber: (table: string) => void;
   setOrderType: (type: "dine_in" | "takeaway") => void;
+  setPromoCode: (code: string) => void;
+  setLastOrderId: (id: string) => void;
   addItem: (menu: MenuItem) => void;
   removeItem: (menuId: string) => void;
   setItemNotes: (menuId: string, notes: string) => void;
   clearCart: () => void;
+  getSubtotal: () => number;
+  getDiscount: () => number;
+  getTax: () => number;
+  getService: () => number;
   getTotal: () => number;
 }
 
@@ -33,8 +41,12 @@ export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   tableNumber: "",
   orderType: "dine_in",
+  promoCode: "",
+  lastOrderId: "",
   setTableNumber: (table) => set({ tableNumber: table }),
   setOrderType: (type) => set({ orderType: type }),
+  setPromoCode: (code) => set({ promoCode: code }),
+  setLastOrderId: (id) => set({ lastOrderId: id }),
 
   addItem: (menu) => {
     const { items } = get();
@@ -80,9 +92,32 @@ export const useCartStore = create<CartState>((set, get) => ({
     });
   },
 
-  clearCart: () => set({ items: [], tableNumber: "", orderType: "dine_in" }),
+  clearCart: () => set({ items: [], tableNumber: "", orderType: "dine_in", promoCode: "" }),
+
+  getSubtotal: () => {
+    return get().items.reduce((total, item) => total + item.menu.price * item.quantity, 0);
+  },
+
+  getDiscount: () => {
+    const subtotal = get().getSubtotal();
+    const code = get().promoCode.toUpperCase().trim();
+    if (code === "NEXUS10") return subtotal * 0.10;
+    if (code === "HEMAT5K") return Math.min(subtotal, 5000);
+    return 0;
+  },
+
+  getTax: () => {
+    const taxable = Math.max(0, get().getSubtotal() - get().getDiscount());
+    return Math.round(taxable * 0.10);
+  },
+
+  getService: () => {
+    const taxable = Math.max(0, get().getSubtotal() - get().getDiscount());
+    return Math.round(taxable * 0.05);
+  },
 
   getTotal: () => {
-    return get().items.reduce((total, item) => total + item.menu.price * item.quantity, 0);
+    const taxable = Math.max(0, get().getSubtotal() - get().getDiscount());
+    return Math.round(taxable + get().getTax() + get().getService());
   },
 }));

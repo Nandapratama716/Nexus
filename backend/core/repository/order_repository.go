@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nanda/nexus/core/domain"
 	"gorm.io/gorm"
 )
@@ -21,18 +22,22 @@ type orderItemJSON struct {
 
 // orderModel DB struct
 type orderModel struct {
-	ID            string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
-	UserID        string `gorm:"not null;type:uuid"`
-	TableNumber   string
-	Items         []byte        `gorm:"type:jsonb;not null"`
-	TotalAmount   float64       `gorm:"not null"`
-	Status        string        `gorm:"not null;default:'pending'"`
-	PaymentStatus string        `gorm:"not null;default:'pending'"`
-	PaymentID     string
-	QRISUrl       string
-	Notes         string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID             string  `gorm:"primaryKey;type:varchar(255)"`
+	UserID         string  `gorm:"not null"`
+	TableNumber    string
+	Items          []byte  `gorm:"type:jsonb;not null"`
+	Subtotal       float64
+	DiscountAmount float64
+	TaxAmount      float64
+	ServiceCharge  float64
+	TotalAmount    float64 `gorm:"not null"`
+	Status         string  `gorm:"not null;default:'pending'"`
+	PaymentStatus  string  `gorm:"not null;default:'pending'"`
+	PaymentID      string
+	QRISUrl        string
+	Notes          string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 func (orderModel) TableName() string { return "orders" }
@@ -50,20 +55,30 @@ func (r *orderRepository) Create(ctx context.Context, o *domain.Order) error {
 	if err != nil {
 		return err
 	}
+	if o.ID == "" {
+		o.ID = "order-" + uuid.New().String()
+	}
 	model := &orderModel{
-		UserID:        o.UserID,
-		TableNumber:   o.TableNumber,
-		Items:         itemsJSON,
-		TotalAmount:   o.TotalAmount,
-		Status:        string(o.Status),
-		PaymentStatus: string(o.PaymentStatus),
-		Notes:         o.Notes,
+		ID:             o.ID,
+		UserID:         o.UserID,
+		TableNumber:    o.TableNumber,
+		Items:          itemsJSON,
+		Subtotal:       o.Subtotal,
+		DiscountAmount: o.DiscountAmount,
+		TaxAmount:      o.TaxAmount,
+		ServiceCharge:  o.ServiceCharge,
+		TotalAmount:    o.TotalAmount,
+		Status:         string(o.Status),
+		PaymentStatus:  string(o.PaymentStatus),
+		PaymentID:      o.PaymentID,
+		QRISUrl:        o.QRISUrl,
+		Notes:          o.Notes,
 	}
 	if err := r.db.WithContext(ctx).Create(model).Error; err != nil {
 		return err
 	}
-	o.ID = model.ID
 	o.CreatedAt = model.CreatedAt
+	o.UpdatedAt = model.UpdatedAt
 	return nil
 }
 
@@ -80,42 +95,65 @@ func (r *orderRepository) GetByID(ctx context.Context, id string) (*domain.Order
 
 func (r *orderRepository) GetByUserID(ctx context.Context, userID string) ([]domain.Order, error) {
 	var models []orderModel
-	if err := r.db.WithContext(ctx).Where("user_id = ?", userID).
-		Order("created_at DESC").Find(&models).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("user_id = ?", userID).Order("created_at desc").Find(&models).Error; err != nil {
 		return nil, err
 	}
-	return toOrderDomainList(models)
+	orders := make([]domain.Order, len(models))
+	for i, m := range models {
+		ord, err := toOrderDomain(m)
+		if err != nil {
+			return nil, err
+		}
+		orders[i] = *ord
+	}
+	return orders, nil
 }
 
 func (r *orderRepository) GetAllActive(ctx context.Context) ([]domain.Order, error) {
 	var models []orderModel
-	// KDS: tampilkan pending dan preparing
-	if err := r.db.WithContext(ctx).
-		Where("status IN ?", []string{"pending", "preparing"}).
-		Order("created_at ASC").Find(&models).Error; err != nil {
+	// Status aktif: pending, preparing, ready (done dan cancelled disembunyikan dari KDS)
+	activeStatuses := []string{string(domain.StatusPending), string(domain.StatusPreparing), string(domain.StatusReady)}
+	if err := r.db.WithContext(ctx).Where("status IN ?", activeStatuses).Order("created_at asc").Find(&models).Error; err != nil {
 		return nil, err
 	}
-	return toOrderDomainList(models)
+	orders := make([]domain.Order, len(models))
+	for i, m := range models {
+		ord, err := toOrderDomain(m)
+		if err != nil {
+			return nil, err
+		}
+		orders[i] = *ord
+	}
+	return orders, nil
 }
 
 func (r *orderRepository) UpdateStatus(ctx context.Context, id string, status domain.OrderStatus) error {
 	return r.db.WithContext(ctx).Model(&orderModel{}).
-		Where("id = ?", id).Update("status", string(status)).Error
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"status":     string(status),
+			"updated_at": time.Now(),
+		}).Error
 }
 
 func (r *orderRepository) UpdatePaymentStatus(ctx context.Context, id string, paymentStatus domain.PaymentStatus, paymentID string) error {
-	return r.db.WithContext(ctx).Model(&orderModel{}).
-		Where("id = ?", id).Updates(map[string]interface{}{
+	updates := map[string]interface{}{
 		"payment_status": string(paymentStatus),
-		"payment_id":     paymentID,
-	}).Error
+		"updated_at":     time.Now(),
+	}
+	if paymentID != "" {
+		updates["payment_id"] = paymentID
+	}
+	return r.db.WithContext(ctx).Model(&orderModel{}).
+		Where("id = ?", id).
+		Updates(updates).Error
 }
 
 // Helpers
 func marshalItems(items []domain.OrderItem) ([]byte, error) {
-	list := make([]orderItemJSON, len(items))
+	jsonItems := make([]orderItemJSON, len(items))
 	for i, item := range items {
-		list[i] = orderItemJSON{
+		jsonItems[i] = orderItemJSON{
 			MenuID:   item.MenuID,
 			MenuName: item.MenuName,
 			Quantity: item.Quantity,
@@ -123,16 +161,17 @@ func marshalItems(items []domain.OrderItem) ([]byte, error) {
 			Subtotal: item.Subtotal,
 		}
 	}
-	return json.Marshal(list)
+	return json.Marshal(jsonItems)
 }
 
 func toOrderDomain(m orderModel) (*domain.Order, error) {
-	var itemsJSON []orderItemJSON
-	if err := json.Unmarshal(m.Items, &itemsJSON); err != nil {
+	var jsonItems []orderItemJSON
+	if err := json.Unmarshal(m.Items, &jsonItems); err != nil {
 		return nil, err
 	}
-	items := make([]domain.OrderItem, len(itemsJSON))
-	for i, item := range itemsJSON {
+
+	items := make([]domain.OrderItem, len(jsonItems))
+	for i, item := range jsonItems {
 		items[i] = domain.OrderItem{
 			MenuID:   item.MenuID,
 			MenuName: item.MenuName,
@@ -141,30 +180,23 @@ func toOrderDomain(m orderModel) (*domain.Order, error) {
 			Subtotal: item.Subtotal,
 		}
 	}
-	return &domain.Order{
-		ID:            m.ID,
-		UserID:        m.UserID,
-		TableNumber:   m.TableNumber,
-		Items:         items,
-		TotalAmount:   m.TotalAmount,
-		Status:        domain.OrderStatus(m.Status),
-		PaymentStatus: domain.PaymentStatus(m.PaymentStatus),
-		PaymentID:     m.PaymentID,
-		QRISUrl:       m.QRISUrl,
-		Notes:         m.Notes,
-		CreatedAt:     m.CreatedAt,
-		UpdatedAt:     m.UpdatedAt,
-	}, nil
-}
 
-func toOrderDomainList(models []orderModel) ([]domain.Order, error) {
-	orders := make([]domain.Order, 0, len(models))
-	for _, m := range models {
-		o, err := toOrderDomain(m)
-		if err != nil {
-			return nil, err
-		}
-		orders = append(orders, *o)
-	}
-	return orders, nil
+	return &domain.Order{
+		ID:             m.ID,
+		UserID:         m.UserID,
+		TableNumber:    m.TableNumber,
+		Items:          items,
+		Subtotal:       m.Subtotal,
+		DiscountAmount: m.DiscountAmount,
+		TaxAmount:      m.TaxAmount,
+		ServiceCharge:  m.ServiceCharge,
+		TotalAmount:    m.TotalAmount,
+		Status:         domain.OrderStatus(m.Status),
+		PaymentStatus:  domain.PaymentStatus(m.PaymentStatus),
+		PaymentID:      m.PaymentID,
+		QRISUrl:        m.QRISUrl,
+		Notes:          m.Notes,
+		CreatedAt:      m.CreatedAt,
+		UpdatedAt:      m.UpdatedAt,
+	}, nil
 }

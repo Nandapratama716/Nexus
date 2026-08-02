@@ -75,11 +75,11 @@ export default function AIChatModal() {
 
         for (const line of lines) {
           if (line.startsWith("data: ")) {
-            const dataToken = line.replace("data: ", "").trim();
-            if (dataToken === "[DONE]") {
+            const rawToken = line.slice(6);
+            if (rawToken.trim() === "[DONE]") {
               setIsStreaming(false);
-            } else if (dataToken && !dataToken.startsWith("[ERROR]")) {
-              accumulatedTokens += dataToken;
+            } else if (rawToken && !rawToken.trim().startsWith("[ERROR]")) {
+              accumulatedTokens += rawToken;
             }
           }
         }

@@ -22,10 +22,10 @@ func NewMenuHandler(app fiber.Router, us domain.MenuUsecase, publisher *infrastr
 	menus.Get("/", handler.GetAll)
 	menus.Get("/:id", handler.GetByID)
 
-	// Admin only
-	menus.Post("/", middleware.JWTProtected(), middleware.RequireRole("admin"), handler.Create)
-	menus.Put("/:id", middleware.JWTProtected(), middleware.RequireRole("admin"), handler.Update)
-	menus.Delete("/:id", middleware.JWTProtected(), middleware.RequireRole("admin"), handler.Delete)
+	// Admin & Manager only
+	menus.Post("/", middleware.JWTProtected(), middleware.RequireRole("admin", "manager"), handler.Create)
+	menus.Put("/:id", middleware.JWTProtected(), middleware.RequireRole("admin", "manager"), handler.Update)
+	menus.Delete("/:id", middleware.JWTProtected(), middleware.RequireRole("admin", "manager"), handler.Delete)
 }
 
 func (h *MenuHandler) GetAll(c *fiber.Ctx) error {

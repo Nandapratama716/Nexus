@@ -99,7 +99,7 @@ func TestOrderUsecase_CreateOrder(t *testing.T) {
 			},
 			menuStore: availableMenus,
 			wantErr:   false,
-			wantTotal: 50000,
+			wantTotal: 57500,
 		},
 		{
 			name:      "gagal — tidak ada item",
@@ -135,9 +135,9 @@ func TestOrderUsecase_CreateOrder(t *testing.T) {
 			},
 			menuStore:   availableMenus,
 			wantErr:     false,
-			wantTotal:   50000,
+			wantTotal:   57500,
 			wantSettled: true,
-			wantChange:  50000,
+			wantChange:  42500,
 		},
 		{
 			name: "gagal — cash payment uang tidak cukup",
@@ -171,7 +171,20 @@ func TestOrderUsecase_CreateOrder(t *testing.T) {
 				"menu-last-two": {ID: "menu-last-two", Name: "Es Alpukat", Price: 15000, StockQty: 2, IsAvailable: true},
 			},
 			wantErr:   false,
-			wantTotal: 30000,
+			wantTotal: 34500, // Subtotal 30k - 0 disc = 30k + 3k tax (10%) + 1.5k service (5%)
+		},
+		{
+			name: "sukses — kalkulasi promo NEXUS10 + Tax 10% + Service 5%",
+			order: &domain.Order{
+				UserID:    "user-1",
+				PromoCode: "NEXUS10",
+				Items:     []domain.OrderItem{{MenuID: "menu-100k", Quantity: 1}},
+			},
+			menuStore: map[string]*domain.Menu{
+				"menu-100k": {ID: "menu-100k", Name: "Steak Wagyu", Price: 100000, IsAvailable: true},
+			},
+			wantErr:   false,
+			wantTotal: 103500, // 100k subtotal - 10k disc = 90k + 9k tax + 4.5k service
 		},
 	}
 

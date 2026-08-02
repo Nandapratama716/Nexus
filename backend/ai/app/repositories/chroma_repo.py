@@ -29,19 +29,19 @@ def _build_menu_document(menu: dict) -> str:
         except Exception:
             tags = [tags]
 
-    tags_str = ", ".join(tags) if tags else "-"
-    stock_qty = menu.get("stock_qty", 0)
-    is_avail = menu.get("is_available", True) and (stock_qty > 0 if "stock_qty" in menu else True)
-    status_str = f"tersedia (sisa stok {stock_qty})" if is_avail else "tidak tersedia (stok habis)"
+    tags_str = ", ".join(tags) if (isinstance(tags, list) and len(tags) > 0) else "tidak ada tag khusus"
+    stock_qty = menu.get("stock_qty", 25)
+    is_avail = menu.get("is_available", True)
+    status_str = f"tersedia (sisa stok {stock_qty} porsi)" if is_avail else "tidak tersedia (sold out)"
     price = menu.get("price", 0)
 
     return (
         f"Nama menu: {menu.get('name', '')}. "
-        f"Deskripsi: {menu.get('description', '')}. "
         f"Kategori: {menu.get('category', '')}. "
-        f"Harga: Rp {price:,}. "
-        f"Tag: {tags_str}. "
-        f"Status: {status_str}."
+        f"Harga: Rp {price:,.0f}. "
+        f"Deskripsi detail: {menu.get('description', 'Tidak ada deskripsi khusus')}. "
+        f"Tag rasa & sifat: {tags_str}. "
+        f"Status ketersediaan: {status_str}."
     )
 
 
@@ -106,6 +106,14 @@ class ChromaMenuRepository:
 
     def seed_from_list(self, menus: list[dict]) -> None:
         """Bulk upsert a list of menu dicts (called at startup)."""
+        # Purge all existing records in collection first to eliminate deleted/stale menus
+        try:
+            existing = self._collection.get()
+            if existing and existing.get("ids") and len(existing["ids"]) > 0:
+                self._collection.delete(ids=existing["ids"])
+        except Exception as err:
+            logger.warning("Could not purge existing collection: %s", err)
+
         if not menus:
             logger.info("No menus to seed.")
             return

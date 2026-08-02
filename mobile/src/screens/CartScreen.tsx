@@ -21,13 +21,44 @@ type RootStackParamList = {
   Home: undefined;
   Menu: undefined;
   Cart: undefined;
-  Payment: { orderId: string; amount: number; paymentMethod: string; cashPaid: number; cashChange: number };
+  Payment: {
+    orderId: string;
+    subtotal: number;
+    promoCode: string;
+    discountAmount: number;
+    taxAmount: number;
+    serviceCharge: number;
+    amount: number;
+    paymentMethod: string;
+    cashPaid: number;
+    cashChange: number;
+    tableNumber: string;
+    orderType: string;
+    items: Array<{ name: string; quantity: number; price: number; subtotal: number; notes?: string }>;
+  };
 };
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, "Cart">;
 
 export default function CartScreen() {
-  const { items, tableNumber, orderType, setOrderType, addItem, removeItem, setItemNotes, clearCart, getTotal } = useCartStore();
+  const {
+    items,
+    tableNumber,
+    orderType,
+    promoCode,
+    setOrderType,
+    setPromoCode,
+    addItem,
+    removeItem,
+    setItemNotes,
+    clearCart,
+    getSubtotal,
+    getDiscount,
+    getTax,
+    getService,
+    getTotal,
+  } = useCartStore();
+
   const navigation = useNavigation<NavigationProp>();
   const [loading, setLoading] = useState(false);
 
@@ -36,6 +67,9 @@ export default function CartScreen() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [tempNotes, setTempNotes] = useState("");
 
+  // Promo code input
+  const [promoInput, setPromoInput] = useState(promoCode);
+
   // Payment method
   const [paymentMethod, setPaymentMethod] = useState<"qris" | "cash">("qris");
 
@@ -43,7 +77,25 @@ export default function CartScreen() {
   const [cashModalVisible, setCashModalVisible] = useState(false);
   const [cashPaidInput, setCashPaidInput] = useState("");
 
+  const subtotal = getSubtotal();
+  const discount = getDiscount();
+  const tax = getTax();
+  const service = getService();
   const total = getTotal();
+
+  const handleApplyPromo = () => {
+    const code = promoInput.trim().toUpperCase();
+    if (!code) {
+      setPromoCode("");
+      return;
+    }
+    if (code === "NEXUS10" || code === "HEMAT5K") {
+      setPromoCode(code);
+      Alert.alert("Voucher Berhasil! 🎉", `Kode promo '${code}' berhasil diterapkan.`);
+    } else {
+      Alert.alert("Kode Tidak Valid", "Gunakan kode: NEXUS10 (Diskon 10%) atau HEMAT5K (Potongan 5rb).");
+    }
+  };
 
   const openNotesModal = (menuId: string, currentNotes: string) => {
     setEditingItemId(menuId);
@@ -67,7 +119,6 @@ export default function CartScreen() {
       return;
     }
 
-    // QRIS flow (existing)
     await submitOrder(0);
   };
 
@@ -96,6 +147,7 @@ export default function CartScreen() {
         table_number: tableNumber,
         order_type: orderType,
         payment_method: paymentMethod,
+        promo_code: promoCode,
         cash_paid: paymentMethod === "cash" ? cashPaid : 0,
         items: orderItems,
       };
@@ -103,15 +155,31 @@ export default function CartScreen() {
       const response = await api.post("/orders", payload);
       const order = response.data;
 
-      const cashChange = paymentMethod === "cash" ? cashPaid - total : 0;
+      const cashChange = paymentMethod === "cash" ? cashPaid - order.total_amount : 0;
+
+      const receiptItems = items.map((item) => ({
+        name: item.menu.name,
+        quantity: item.quantity,
+        price: item.menu.price,
+        subtotal: item.menu.price * item.quantity,
+        notes: item.notes,
+      }));
 
       clearCart();
       navigation.replace("Payment", {
         orderId: order.id,
-        amount: order.total_amount,
+        subtotal: order.subtotal || subtotal,
+        promoCode: order.promo_code || promoCode,
+        discountAmount: order.discount_amount || discount,
+        taxAmount: order.tax_amount || tax,
+        serviceCharge: order.service_charge || service,
+        amount: order.total_amount || total,
         paymentMethod,
         cashPaid,
         cashChange,
+        tableNumber,
+        orderType,
+        items: receiptItems,
       });
     } catch (error) {
       console.error("Checkout failed:", error);
@@ -162,58 +230,97 @@ export default function CartScreen() {
         }
       />
 
-      <View style={styles.footer}>
-        {/* Order Type Toggle */}
-        <View style={styles.toggleRow}>
+      {items.length > 0 && (
+        <View style={styles.footer}>
+          {/* Order Type Toggle */}
+          <View style={styles.toggleRow}>
+            <TouchableOpacity
+              style={[styles.toggleBtn, orderType === "dine_in" && styles.toggleBtnActive]}
+              onPress={() => setOrderType("dine_in")}
+            >
+              <Text style={[styles.toggleText, orderType === "dine_in" && styles.toggleTextActive]}>🍽️ Dine In</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleBtn, orderType === "takeaway" && styles.toggleBtnActive]}
+              onPress={() => setOrderType("takeaway")}
+            >
+              <Text style={[styles.toggleText, orderType === "takeaway" && styles.toggleTextActive]}>🥡 Takeaway</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Payment Method Toggle */}
+          <View style={styles.toggleRow}>
+            <TouchableOpacity
+              style={[styles.toggleBtn, paymentMethod === "qris" && styles.toggleBtnActive]}
+              onPress={() => setPaymentMethod("qris")}
+            >
+              <Text style={[styles.toggleText, paymentMethod === "qris" && styles.toggleTextActive]}>📱 QRIS</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleBtn, paymentMethod === "cash" && styles.toggleBtnActive]}
+              onPress={() => setPaymentMethod("cash")}
+            >
+              <Text style={[styles.toggleText, paymentMethod === "cash" && styles.toggleTextActive]}>💵 Cash</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Promo Voucher Bar */}
+          <View style={styles.promoContainer}>
+            <TextInput
+              style={styles.promoInput}
+              placeholder="Kode Promo (e.g. NEXUS10)"
+              placeholderTextColor="#94a3b8"
+              value={promoInput}
+              onChangeText={setPromoInput}
+              autoCapitalize="characters"
+            />
+            <TouchableOpacity style={styles.promoBtn} onPress={handleApplyPromo}>
+              <Text style={styles.promoBtnText}>Apply</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Financial Breakdown */}
+          <View style={styles.breakdownContainer}>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Subtotal</Text>
+              <Text style={styles.breakdownValue}>Rp {subtotal.toLocaleString("id-ID")}</Text>
+            </View>
+            {discount > 0 && (
+              <View style={styles.breakdownRow}>
+                <Text style={styles.discountLabel}>Promo ({promoCode})</Text>
+                <Text style={styles.discountValue}>-Rp {discount.toLocaleString("id-ID")}</Text>
+              </View>
+            )}
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Pajak PB1 (10%)</Text>
+              <Text style={styles.breakdownValue}>Rp {tax.toLocaleString("id-ID")}</Text>
+            </View>
+            <View style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>Service Charge (5%)</Text>
+              <Text style={styles.breakdownValue}>Rp {service.toLocaleString("id-ID")}</Text>
+            </View>
+          </View>
+
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Total Final</Text>
+            <Text style={styles.totalValue}>Rp {total.toLocaleString("id-ID")}</Text>
+          </View>
+
           <TouchableOpacity
-            style={[styles.toggleBtn, orderType === "dine_in" && styles.toggleBtnActive]}
-            onPress={() => setOrderType("dine_in")}
+            style={[styles.checkoutBtn, items.length === 0 && styles.checkoutBtnDisabled]}
+            onPress={handleCheckout}
+            disabled={items.length === 0 || loading}
           >
-            <Text style={[styles.toggleText, orderType === "dine_in" && styles.toggleTextActive]}>🍽️ Dine In</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleBtn, orderType === "takeaway" && styles.toggleBtnActive]}
-            onPress={() => setOrderType("takeaway")}
-          >
-            <Text style={[styles.toggleText, orderType === "takeaway" && styles.toggleTextActive]}>🥡 Takeaway</Text>
+            {loading ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <Text style={styles.checkoutBtnText}>
+                {paymentMethod === "cash" ? "Pay with Cash" : "Pay with QRIS"}
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
-
-        {/* Payment Method Toggle */}
-        <View style={styles.toggleRow}>
-          <TouchableOpacity
-            style={[styles.toggleBtn, paymentMethod === "qris" && styles.toggleBtnActive]}
-            onPress={() => setPaymentMethod("qris")}
-          >
-            <Text style={[styles.toggleText, paymentMethod === "qris" && styles.toggleTextActive]}>📱 QRIS</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleBtn, paymentMethod === "cash" && styles.toggleBtnActive]}
-            onPress={() => setPaymentMethod("cash")}
-          >
-            <Text style={[styles.toggleText, paymentMethod === "cash" && styles.toggleTextActive]}>💵 Cash</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>Rp {total.toLocaleString("id-ID")}</Text>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.checkoutBtn, items.length === 0 && styles.checkoutBtnDisabled]}
-          onPress={handleCheckout}
-          disabled={items.length === 0 || loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text style={styles.checkoutBtnText}>
-              {paymentMethod === "cash" ? "Pay with Cash" : "Pay with QRIS"}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
+      )}
 
       {/* Notes Modal */}
       <Modal visible={notesModalVisible} transparent animationType="slide">
@@ -247,7 +354,7 @@ export default function CartScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>💵 Cash Payment</Text>
             <Text style={styles.modalSubtitle}>
-              Total: Rp {total.toLocaleString("id-ID")}
+              Total Final: Rp {total.toLocaleString("id-ID")}
             </Text>
             <TextInput
               style={styles.cashInput}
@@ -257,14 +364,14 @@ export default function CartScreen() {
               onChangeText={setCashPaidInput}
               keyboardType="numeric"
             />
-            {cashPaidInput && parseFloat(cashPaidInput) >= total && (
+            {Boolean(cashPaidInput) && parseFloat(cashPaidInput) >= total ? (
               <View style={styles.changeBox}>
                 <Text style={styles.changeLabel}>Kembalian</Text>
                 <Text style={styles.changeValue}>
                   Rp {(parseFloat(cashPaidInput) - total).toLocaleString("id-ID")}
                 </Text>
               </View>
-            )}
+            ) : null}
             <View style={styles.modalBtnRow}>
               <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setCashModalVisible(false)}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
@@ -303,29 +410,50 @@ const styles = StyleSheet.create({
   qtyBtnText: { fontSize: 20, color: "#0d253d" },
   quantityText: { fontSize: 16, fontWeight: "500", color: "#0d253d", minWidth: 24, textAlign: "center" },
   footer: {
-    padding: 24, backgroundColor: "#ffffff", borderTopWidth: 1,
-    borderTopColor: "#e2e8f0", paddingBottom: 40,
+    padding: 20, backgroundColor: "#ffffff", borderTopWidth: 1,
+    borderTopColor: "#e2e8f0", paddingBottom: 34,
   },
   toggleRow: {
-    flexDirection: "row", marginBottom: 12, gap: 8,
+    flexDirection: "row", marginBottom: 8, gap: 8,
   },
   toggleBtn: {
-    flex: 1, paddingVertical: 10, borderRadius: 100, borderWidth: 1,
+    flex: 1, paddingVertical: 8, borderRadius: 100, borderWidth: 1,
     borderColor: "#e2e8f0", alignItems: "center", backgroundColor: "#f8fafc",
   },
   toggleBtnActive: {
     backgroundColor: "#533afd", borderColor: "#533afd",
   },
-  toggleText: { fontSize: 14, color: "#64748b", fontWeight: "500" },
+  toggleText: { fontSize: 13, color: "#64748b", fontWeight: "500" },
   toggleTextActive: { color: "#ffffff" },
-  totalRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 20 },
-  totalLabel: { fontSize: 20, color: "#64748b" },
-  totalValue: { fontSize: 24, fontWeight: "500", color: "#0d253d" },
+  promoContainer: {
+    flexDirection: "row", marginVertical: 8, gap: 8,
+  },
+  promoInput: {
+    flex: 1, height: 42, borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 100,
+    paddingHorizontal: 16, fontSize: 14, color: "#0d253d", backgroundColor: "#f8fafc",
+  },
+  promoBtn: {
+    backgroundColor: "#533afd", borderRadius: 100, paddingHorizontal: 18, justifyContent: "center",
+  },
+  promoBtnText: { color: "#ffffff", fontSize: 14, fontWeight: "500" },
+  breakdownContainer: {
+    backgroundColor: "#f8fafc", padding: 12, borderRadius: 12, marginVertical: 8, gap: 4,
+  },
+  breakdownRow: {
+    flexDirection: "row", justifyContent: "space-between",
+  },
+  breakdownLabel: { fontSize: 13, color: "#64748b" },
+  breakdownValue: { fontSize: 13, color: "#0d253d" },
+  discountLabel: { fontSize: 13, color: "#10B981", fontWeight: "500" },
+  discountValue: { fontSize: 13, color: "#10B981", fontWeight: "500" },
+  totalRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 12 },
+  totalLabel: { fontSize: 18, fontWeight: "500", color: "#0d253d" },
+  totalValue: { fontSize: 22, fontWeight: "600", color: "#533afd" },
   checkoutBtn: {
-    backgroundColor: "#533afd", paddingVertical: 16, borderRadius: 100, alignItems: "center",
+    backgroundColor: "#533afd", paddingVertical: 14, borderRadius: 100, alignItems: "center",
   },
   checkoutBtnDisabled: { backgroundColor: "#94a3b8" },
-  checkoutBtnText: { color: "#ffffff", fontSize: 18, fontWeight: "500" },
+  checkoutBtnText: { color: "#ffffff", fontSize: 16, fontWeight: "500" },
   // Modals
   modalOverlay: {
     flex: 1, backgroundColor: "rgba(13,37,61,0.5)", justifyContent: "flex-end",

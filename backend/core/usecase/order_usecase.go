@@ -32,7 +32,7 @@ func (u *orderUsecase) CreateOrder(ctx context.Context, order *domain.Order) err
 		return errors.New("pesanan harus memiliki minimal 1 item")
 	}
 	if order.UserID == "" {
-		return errors.New("user ID wajib ada")
+		order.UserID = "guest"
 	}
 
 	// Default order type
@@ -88,7 +88,26 @@ func (u *orderUsecase) CreateOrder(ctx context.Context, order *domain.Order) err
 		}
 	}
 
-	order.TotalAmount = math.Round(total*100) / 100
+	order.Subtotal = math.Round(total*100) / 100
+
+	// Kalkulasi promo / diskon voucher
+	var discount float64
+	switch order.PromoCode {
+	case "NEXUS10":
+		discount = order.Subtotal * 0.10 // Diskon 10%
+	case "HEMAT5K":
+		discount = 5000 // Potongan Rp 5.000
+	}
+	if discount > order.Subtotal {
+		discount = order.Subtotal
+	}
+	order.DiscountAmount = math.Round(discount*100) / 100
+
+	taxableAmount := math.Max(0, order.Subtotal-order.DiscountAmount)
+	order.TaxAmount = math.Round(taxableAmount*0.10*100) / 100       // Pajak PB1 (10%)
+	order.ServiceCharge = math.Round(taxableAmount*0.05*100) / 100   // Service Charge (5%)
+	order.TotalAmount = math.Round((taxableAmount+order.TaxAmount+order.ServiceCharge)*100) / 100
+
 	order.Status = domain.StatusPending
 
 	// --- Cash Payment: langsung settled ---

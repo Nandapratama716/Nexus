@@ -7,12 +7,14 @@ import HomeScreen from './src/screens/HomeScreen';
 import MenuScreen from './src/screens/MenuScreen';
 import CartScreen from './src/screens/CartScreen';
 import PaymentScreen from './src/screens/PaymentScreen';
+import MyOrdersScreen from './src/screens/MyOrdersScreen';
 
 export type RootStackParamList = {
   Home: undefined;
   Menu: undefined;
   Cart: undefined;
   Payment: { orderId: string; amount: number };
+  MyOrders: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -53,6 +55,11 @@ export default function App() {
           name="Payment" 
           component={PaymentScreen} 
           options={{ headerShown: false, gestureEnabled: false }} 
+        />
+        <Stack.Screen 
+          name="MyOrders" 
+          component={MyOrdersScreen} 
+          options={{ title: 'Pesanan Saya' }} 
         />
       </Stack.Navigator>
     </NavigationContainer>

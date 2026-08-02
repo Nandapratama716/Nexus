@@ -25,6 +25,7 @@ export async function createMenu(data: {
   category: string;
   tags: string[];
   stock_qty: number;
+  image_url?: string;
 }) {
   const id = `menu-${Date.now()}`;
   const now = new Date();
@@ -40,6 +41,7 @@ export async function createMenu(data: {
       category: data.category,
       tags: JSON.stringify(data.tags),
       stock_qty: data.stock_qty,
+      image_url: data.image_url || "",
       is_available: isAvailable,
       created_at: now,
       updated_at: now,
@@ -62,6 +64,7 @@ export async function createMenu(data: {
         category: data.category,
         tags: data.tags,
         stock_qty: data.stock_qty,
+        image_url: data.image_url || "",
         is_available: isAvailable,
       }),
     });

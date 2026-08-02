@@ -83,7 +83,7 @@ func main() {
 	// 6. HTTP Handlers (injeksi usecases)
 	delivery.NewAuthHandler(app, authUC)
 	delivery.NewMenuHandler(app, menuUC, menuPublisher)
-	delivery.NewOrderHandler(app, orderUC)
+	delivery.NewOrderHandler(app, orderUC, hub)
 	delivery.NewPaymentHandler(app, orderUC, mockMidtrans)
 
 	// 7. WebSocket endpoint untuk KDS

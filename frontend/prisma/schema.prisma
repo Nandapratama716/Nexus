@@ -35,8 +35,13 @@ model orders {
   id             String    @id
   user_id        String?
   table_number   String?
-  items          String?
-  total_amount   Decimal?  @db.Decimal
+  items           String?
+  subtotal        Decimal?  @db.Decimal
+  promo_code      String?
+  discount_amount Decimal?  @db.Decimal
+  tax_amount      Decimal?  @db.Decimal
+  service_charge  Decimal?  @db.Decimal
+  total_amount    Decimal?  @db.Decimal
   status         String?
   payment_status String?
   payment_method String?

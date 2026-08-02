@@ -11,7 +11,10 @@ type Role string
 const (
 	RoleCustomer Role = "customer"
 	RoleAdmin    Role = "admin"
-	RoleStaff    Role = "staff"
+	RoleManager  Role = "manager"
+	RoleCashier  Role = "cashier"
+	RoleKitchen  Role = "kitchen"
+	RoleStaff    Role = "staff" // alias kompatibilitas untuk dapur
 )
 
 // User entity murni — tidak ada tag GORM

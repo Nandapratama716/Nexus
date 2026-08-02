@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Nexus Admin Dashboard",
-  description: "POS and Kitchen Display System for Nexus",
+  title: "Nexus POS & Admin Dashboard",
+  description: "Financial-grade POS and Kitchen Display System for Nexus",
 };
 
 export default function RootLayout({
@@ -20,14 +20,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={inter.variable}>
-      <body className="antialiased bg-canvas text-ink min-h-screen relative overflow-x-hidden">
-        {/* Stripi Gradient Mesh Decoration */}
-        <div className="absolute top-0 left-0 w-full h-[400px] bg-mesh -z-10 rounded-b-[40%]" />
-        
-        {/* Main Content Container */}
-        <main className="max-w-7xl mx-auto pt-24 pb-12 px-6">
-          {children}
-        </main>
+      <body className="antialiased bg-canvas-soft text-ink min-h-screen w-full overflow-x-hidden">
+        {children}
       </body>
     </html>
   );

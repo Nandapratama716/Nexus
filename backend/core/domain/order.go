@@ -57,8 +57,13 @@ type Order struct {
 	ID            string        `json:"id"`
 	UserID        string        `json:"user_id"`
 	TableNumber   string        `json:"table_number"`
-	Items         []OrderItem   `json:"items" gorm:"serializer:json"`
-	TotalAmount   float64       `json:"total_amount"`
+	Items          []OrderItem   `json:"items" gorm:"serializer:json"`
+	Subtotal       float64       `json:"subtotal"`
+	PromoCode      string        `json:"promo_code"`
+	DiscountAmount float64       `json:"discount_amount"`
+	TaxAmount      float64       `json:"tax_amount"`
+	ServiceCharge  float64       `json:"service_charge"`
+	TotalAmount    float64       `json:"total_amount"`
 	Status        OrderStatus   `json:"status"`
 	PaymentStatus PaymentStatus `json:"payment_status"`
 	PaymentMethod PaymentMethod `json:"payment_method"` // cash / qris
