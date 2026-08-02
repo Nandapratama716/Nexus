@@ -5,6 +5,8 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { api } from "../config/api";
 import { MenuItem, useCartStore } from "../store/cartStore";
 
+import AIChatModal from "../components/AIChatModal";
+
 type RootStackParamList = {
   Home: undefined;
   Menu: undefined;
@@ -72,6 +74,9 @@ export default function MenuScreen() {
           contentContainerStyle={styles.list}
         />
       )}
+
+      {/* Floating AI Order Assistant */}
+      <AIChatModal />
     </View>
   );
 }
