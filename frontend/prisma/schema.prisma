@@ -38,8 +38,12 @@ model orders {
   total_amount   Decimal?  @db.Decimal
   status         String?
   payment_status String?
+  payment_method String?
   payment_id     String?
   qris_url       String?
+  cash_paid      Decimal?  @db.Decimal
+  cash_change    Decimal?  @db.Decimal
+  order_type     String?
   notes          String?
   created_at     DateTime? @db.Timestamptz(6)
   updated_at     DateTime? @db.Timestamptz(6)

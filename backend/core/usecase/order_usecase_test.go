@@ -80,14 +80,16 @@ func TestOrderUsecase_CreateOrder(t *testing.T) {
 	}
 
 	tests := []struct {
-		name      string
-		order     *domain.Order
-		menuStore map[string]*domain.Menu
-		wantErr   bool
-		wantTotal float64
+		name        string
+		order       *domain.Order
+		menuStore   map[string]*domain.Menu
+		wantErr     bool
+		wantTotal   float64
+		wantSettled bool    // expect PaymentStatus == settled
+		wantChange  float64 // expected CashChange
 	}{
 		{
-			name: "sukses — total dihitung benar",
+			name: "sukses — total dihitung benar (default qris)",
 			order: &domain.Order{
 				UserID: "user-1",
 				Items:  []domain.OrderItem{{MenuID: "menu-1", Quantity: 2}},
@@ -120,6 +122,41 @@ func TestOrderUsecase_CreateOrder(t *testing.T) {
 			menuStore: availableMenus,
 			wantErr:   true,
 		},
+		{
+			name: "sukses — cash payment langsung settled",
+			order: &domain.Order{
+				UserID:        "cashier-1",
+				PaymentMethod: domain.PaymentCash,
+				CashPaid:      100000,
+				Items:         []domain.OrderItem{{MenuID: "menu-1", Quantity: 2}},
+			},
+			menuStore:   availableMenus,
+			wantErr:     false,
+			wantTotal:   50000,
+			wantSettled: true,
+			wantChange:  50000,
+		},
+		{
+			name: "gagal — cash payment uang tidak cukup",
+			order: &domain.Order{
+				UserID:        "cashier-1",
+				PaymentMethod: domain.PaymentCash,
+				CashPaid:      10000,
+				Items:         []domain.OrderItem{{MenuID: "menu-1", Quantity: 2}},
+			},
+			menuStore: availableMenus,
+			wantErr:   true,
+		},
+		{
+			name: "sukses — item notes dipertahankan",
+			order: &domain.Order{
+				UserID: "user-1",
+				Items:  []domain.OrderItem{{MenuID: "menu-1", Quantity: 1, Notes: "pedas level 3"}},
+			},
+			menuStore: availableMenus,
+			wantErr:   false,
+			wantTotal: 25000,
+		},
 	}
 
 	for _, tc := range tests {
@@ -131,6 +168,18 @@ func TestOrderUsecase_CreateOrder(t *testing.T) {
 			}
 			if !tc.wantErr && tc.order.TotalAmount != tc.wantTotal {
 				t.Errorf("TotalAmount = %.0f, want %.0f", tc.order.TotalAmount, tc.wantTotal)
+			}
+			if tc.wantSettled && tc.order.PaymentStatus != domain.PaymentSettled {
+				t.Errorf("PaymentStatus = %s, want settled", tc.order.PaymentStatus)
+			}
+			if tc.wantChange > 0 && tc.order.CashChange != tc.wantChange {
+				t.Errorf("CashChange = %.0f, want %.0f", tc.order.CashChange, tc.wantChange)
+			}
+			// Verify item notes preserved
+			if !tc.wantErr && len(tc.order.Items) > 0 && tc.order.Items[0].Notes != "" {
+				if tc.order.Items[0].Notes != "pedas level 3" {
+					t.Errorf("Item Notes = %s, want 'pedas level 3'", tc.order.Items[0].Notes)
+				}
 			}
 		})
 	}

@@ -1,5 +1,5 @@
-import React, { useEffect } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
+import React from "react";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
@@ -7,7 +7,7 @@ type RootStackParamList = {
   Home: undefined;
   Menu: undefined;
   Cart: undefined;
-  Payment: { orderId: string; amount: number };
+  Payment: { orderId: string; amount: number; paymentMethod: string; cashPaid: number; cashChange: number };
 };
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList, "Payment">;
@@ -15,27 +15,59 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList, "Payment">;
 export default function PaymentScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<any>();
-  const { orderId, amount } = route.params || { orderId: "N/A", amount: 0 };
+  const {
+    orderId = "N/A",
+    amount = 0,
+    paymentMethod = "qris",
+    cashPaid = 0,
+    cashChange = 0,
+  } = route.params || {};
+
+  const isCash = paymentMethod === "cash";
 
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <Text style={styles.title}>Order Placed!</Text>
+        <Text style={styles.title}>
+          {isCash ? "Payment Complete! ✅" : "Order Placed!"}
+        </Text>
         <Text style={styles.subtitle}>Order ID: {orderId}</Text>
 
         <View style={styles.amountBox}>
-          <Text style={styles.amountLabel}>Total to pay</Text>
+          <Text style={styles.amountLabel}>Total</Text>
           <Text style={styles.amountValue}>Rp {amount.toLocaleString("id-ID")}</Text>
         </View>
 
-        <View style={styles.qrPlaceholder}>
-          <Text style={styles.qrText}>MOCK QRIS</Text>
-          <Text style={styles.qrSubText}>Midtrans Sandbox</Text>
-        </View>
-        
-        <Text style={styles.instruction}>
-          Please show this screen to the customer for payment, or wait for webhook confirmation.
-        </Text>
+        {isCash ? (
+          /* Cash Receipt */
+          <View style={styles.cashReceipt}>
+            <View style={styles.receiptRow}>
+              <Text style={styles.receiptLabel}>Payment Method</Text>
+              <Text style={styles.receiptValue}>💵 Cash</Text>
+            </View>
+            <View style={styles.receiptRow}>
+              <Text style={styles.receiptLabel}>Cash Received</Text>
+              <Text style={styles.receiptValue}>Rp {cashPaid.toLocaleString("id-ID")}</Text>
+            </View>
+            <View style={styles.receiptDivider} />
+            <View style={styles.receiptRow}>
+              <Text style={styles.changeLabel}>Change</Text>
+              <Text style={styles.changeValue}>Rp {cashChange.toLocaleString("id-ID")}</Text>
+            </View>
+            <Text style={styles.settledBadge}>SETTLED</Text>
+          </View>
+        ) : (
+          /* QRIS Display */
+          <>
+            <View style={styles.qrPlaceholder}>
+              <Text style={styles.qrText}>MOCK QRIS</Text>
+              <Text style={styles.qrSubText}>Midtrans Sandbox</Text>
+            </View>
+            <Text style={styles.instruction}>
+              Please show this screen to the customer for payment, or wait for webhook confirmation.
+            </Text>
+          </>
+        )}
       </View>
 
       <TouchableOpacity
@@ -51,7 +83,7 @@ export default function PaymentScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0d253d", // brand-dark
+    backgroundColor: "#0d253d",
     padding: 24,
     justifyContent: "center",
   },
@@ -74,7 +106,7 @@ const styles = StyleSheet.create({
   },
   amountBox: {
     alignItems: "center",
-    marginBottom: 32,
+    marginBottom: 24,
   },
   amountLabel: {
     fontSize: 14,
@@ -88,6 +120,58 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#533afd",
   },
+  // Cash Receipt
+  cashReceipt: {
+    width: "100%",
+    backgroundColor: "#f8fafc",
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  receiptRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  receiptLabel: {
+    fontSize: 14,
+    color: "#64748b",
+  },
+  receiptValue: {
+    fontSize: 14,
+    color: "#0d253d",
+    fontWeight: "500",
+  },
+  receiptDivider: {
+    height: 1,
+    backgroundColor: "#e2e8f0",
+    marginVertical: 12,
+  },
+  changeLabel: {
+    fontSize: 16,
+    color: "#0d253d",
+    fontWeight: "500",
+  },
+  changeValue: {
+    fontSize: 20,
+    color: "#10B981",
+    fontWeight: "600",
+  },
+  settledBadge: {
+    alignSelf: "center",
+    marginTop: 16,
+    backgroundColor: "#10B981",
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "bold",
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 100,
+    overflow: "hidden",
+    letterSpacing: 2,
+  },
+  // QRIS
   qrPlaceholder: {
     width: 200,
     height: 200,

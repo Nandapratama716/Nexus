@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"math"
 
 	"github.com/nanda/nexus/core/domain"
 )
@@ -24,6 +25,16 @@ func (u *orderUsecase) CreateOrder(ctx context.Context, order *domain.Order) err
 		return errors.New("user ID wajib ada")
 	}
 
+	// Default order type
+	if order.OrderType == "" {
+		order.OrderType = domain.OrderDineIn
+	}
+
+	// Default payment method
+	if order.PaymentMethod == "" {
+		order.PaymentMethod = domain.PaymentQRIS
+	}
+
 	// Hitung total dan snapshot harga dari menu terkini
 	var total float64
 	for i, item := range order.Items {
@@ -39,12 +50,26 @@ func (u *orderUsecase) CreateOrder(ctx context.Context, order *domain.Order) err
 		order.Items[i].MenuName = menu.Name
 		order.Items[i].Price = menu.Price
 		order.Items[i].Subtotal = menu.Price * float64(item.Quantity)
+		// Notes per item dipertahankan dari request
 		total += order.Items[i].Subtotal
 	}
 
-	order.TotalAmount = total
+	order.TotalAmount = math.Round(total*100) / 100
 	order.Status = domain.StatusPending
-	order.PaymentStatus = domain.PaymentPending
+
+	// --- Cash Payment: langsung settled ---
+	if order.PaymentMethod == domain.PaymentCash {
+		if order.CashPaid < order.TotalAmount {
+			return errors.New("uang tidak cukup: bayar Rp " +
+				formatCurrency(order.CashPaid) + ", total Rp " +
+				formatCurrency(order.TotalAmount))
+		}
+		order.CashChange = math.Round((order.CashPaid-order.TotalAmount)*100) / 100
+		order.PaymentStatus = domain.PaymentSettled
+	} else {
+		// QRIS: tunggu webhook callback
+		order.PaymentStatus = domain.PaymentPending
+	}
 
 	return u.orderRepo.Create(ctx, order)
 }
@@ -106,4 +131,13 @@ func isValidTransition(current, next domain.OrderStatus) bool {
 		}
 	}
 	return false
+}
+
+// formatCurrency format angka ke string sederhana
+func formatCurrency(amount float64) string {
+	// Simple int formatting for error messages
+	if amount == float64(int64(amount)) {
+		return string(rune(int64(amount)))
+	}
+	return ""
 }
