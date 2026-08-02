@@ -79,20 +79,25 @@ async def run_menu_sync_worker() -> None:
     berbeda dengan Pub/Sub yang bisa kehilangan pesan jika consumer mati.
     """
     logger.info("Menu sync worker starting (stream=%s, group=%s).", STREAM_KEY, GROUP_NAME)
-    redis = Redis.from_url(REDIS_URL, decode_responses=True)
+    redis = Redis.from_url(
+        REDIS_URL,
+        decode_responses=True,
+        socket_timeout=15.0,
+        socket_connect_timeout=5.0,
+    )
 
     try:
         await _ensure_group(redis)
 
         while True:
             try:
-                # Block 5 detik menunggu pesan baru
+                # Block 2 detik menunggu pesan baru (socket_timeout=15s)
                 results = await redis.xreadgroup(
                     GROUP_NAME,
                     CONSUMER_NAME,
                     {STREAM_KEY: ">"},
                     count=10,
-                    block=5000,
+                    block=2000,
                 )
 
                 if not results:
