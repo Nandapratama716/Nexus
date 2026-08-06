@@ -69,6 +69,8 @@ async def lifespan(app: FastAPI):
     logger.info("Nexus AI Service shutting down.")
 
 
+from app.middleware.rate_limit import AIRateLimitMiddleware
+
 app = FastAPI(
     title="Nexus AI Microservice",
     version="2.0.0",
@@ -76,6 +78,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(AIRateLimitMiddleware, max_requests=10, window_seconds=60)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
