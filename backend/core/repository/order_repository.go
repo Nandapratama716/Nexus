@@ -23,6 +23,8 @@ type orderItemJSON struct {
 // orderModel DB struct
 type orderModel struct {
 	ID             string  `gorm:"primaryKey;type:varchar(255)"`
+	TenantID       string  `gorm:"type:varchar(255);index"`
+	StoreID        string  `gorm:"type:varchar(255);index"`
 	UserID         string  `gorm:"not null"`
 	TableNumber    string
 	Items          []byte  `gorm:"type:jsonb;not null"`
@@ -60,6 +62,8 @@ func (r *orderRepository) Create(ctx context.Context, o *domain.Order) error {
 	}
 	model := &orderModel{
 		ID:             o.ID,
+		TenantID:       o.TenantID,
+		StoreID:        o.StoreID,
 		UserID:         o.UserID,
 		TableNumber:    o.TableNumber,
 		Items:          itemsJSON,
@@ -183,6 +187,8 @@ func toOrderDomain(m orderModel) (*domain.Order, error) {
 
 	return &domain.Order{
 		ID:             m.ID,
+		TenantID:       m.TenantID,
+		StoreID:        m.StoreID,
 		UserID:         m.UserID,
 		TableNumber:    m.TableNumber,
 		Items:          items,

@@ -10,10 +10,10 @@ import (
 
 type PaymentHandler struct {
 	OrderUsecase   domain.OrderUsecase
-	MidtransClient *infrastructure.MockMidtransClient
+	MidtransClient *infrastructure.MidtransClient
 }
 
-func NewPaymentHandler(app *fiber.App, orderUsecase domain.OrderUsecase, midtransClient *infrastructure.MockMidtransClient) {
+func NewPaymentHandler(app fiber.Router, orderUsecase domain.OrderUsecase, midtransClient *infrastructure.MidtransClient) {
 	handler := &PaymentHandler{
 		OrderUsecase:   orderUsecase,
 		MidtransClient: midtransClient,
@@ -24,27 +24,30 @@ func NewPaymentHandler(app *fiber.App, orderUsecase domain.OrderUsecase, midtran
 }
 
 func (h *PaymentHandler) HandleMidtransCallback(c *fiber.Ctx) error {
-	// Midtrans mengirimkan JSON payload
 	var payload map[string]interface{}
 	if err := c.BodyParser(&payload); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid payload"})
 	}
 
-	// Ambil field penting
 	orderID, _ := payload["order_id"].(string)
 	statusCode, _ := payload["status_code"].(string)
 	grossAmount, _ := payload["gross_amount"].(string)
 	signatureKey, _ := payload["signature_key"].(string)
 	transactionStatus, _ := payload["transaction_status"].(string)
 
-	log.Printf("[Webhook] Menerima update untuk Order %s (Status: %s)\n", orderID, transactionStatus)
+	log.Printf("[Midtrans Webhook] Update transaksi untuk Order %s (Status: %s)\n", orderID, transactionStatus)
 
-	// Verifikasi Signature (Mock)
-	isValid := h.MidtransClient.VerifySignatureKey(signatureKey, orderID, statusCode, grossAmount)
-	if !isValid {
-		log.Println("[Webhook] Error: Invalid Signature")
-		// Dalam production, kembalikan 403. Di sini kita log saja agar mudah ditest lokal
-		// return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "invalid signature"})
+	// Verifikasi HMAC SHA512 Signature jika signatureKey disertakan oleh Midtrans
+	if signatureKey != "" && h.MidtransClient != nil {
+		isValid := h.MidtransClient.VerifySignatureKey(signatureKey, orderID, statusCode, grossAmount)
+		if !isValid {
+			log.Printf("[Midtrans Webhook Security Alert] Invalid HMAC SHA512 Signature Key untuk Order: %s", orderID)
+			if h.MidtransClient.IsProduction {
+				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Invalid HMAC SHA512 Signature Key"})
+			}
+		} else {
+			log.Printf("[Midtrans Webhook] Signature Key terverifikasi valid (SHA512).")
+		}
 	}
 
 	// Map status Midtrans ke PaymentStatus domain
@@ -63,8 +66,8 @@ func (h *PaymentHandler) HandleMidtransCallback(c *fiber.Ctx) error {
 	// Update via usecase
 	err := h.OrderUsecase.HandlePaymentWebhook(c.Context(), orderID, status)
 	if err != nil {
-		log.Printf("[Webhook] Error updating order: %v\n", err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "gagal update order"})
+		log.Printf("[Webhook Error] Gagal update order status: %v\n", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal update status pembayaran order"})
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "ok"})

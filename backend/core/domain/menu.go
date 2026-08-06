@@ -17,6 +17,8 @@ const (
 // Menu entity murni
 type Menu struct {
 	ID          string       `json:"id"`
+	TenantID    string       `json:"tenant_id,omitempty"`
+	StoreID     string       `json:"store_id,omitempty"`
 	Name        string       `json:"name"`
 	Description string       `json:"description"`
 	Price       float64      `json:"price"`

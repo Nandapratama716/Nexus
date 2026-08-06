@@ -20,6 +20,8 @@ const (
 // User entity murni — tidak ada tag GORM
 type User struct {
 	ID           string    `json:"id"`
+	TenantID     string    `json:"tenant_id,omitempty"`
+	StoreID      string    `json:"store_id,omitempty"`
 	Name         string    `json:"name"`
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"`

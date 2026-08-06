@@ -11,6 +11,8 @@ import (
 // userModel DB struct — terpisah dari domain entity
 type userModel struct {
 	ID           string `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	TenantID     string `gorm:"type:varchar(255);index"`
+	StoreID      string `gorm:"type:varchar(255);index"`
 	Name         string `gorm:"not null"`
 	Email        string `gorm:"uniqueIndex;not null"`
 	PasswordHash string `gorm:"not null"`
@@ -29,6 +31,8 @@ func NewUserRepository(db *gorm.DB) domain.AuthRepository {
 
 func (r *userRepository) Create(ctx context.Context, u *domain.User) error {
 	model := &userModel{
+		TenantID:     u.TenantID,
+		StoreID:      u.StoreID,
 		Name:         u.Name,
 		Email:        u.Email,
 		PasswordHash: u.PasswordHash,
@@ -63,6 +67,8 @@ func (r *userRepository) FindByID(ctx context.Context, id string) (*domain.User,
 func toDomainUser(m userModel) *domain.User {
 	return &domain.User{
 		ID:           m.ID,
+		TenantID:     m.TenantID,
+		StoreID:      m.StoreID,
 		Name:         m.Name,
 		Email:        m.Email,
 		PasswordHash: m.PasswordHash,

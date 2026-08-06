@@ -74,6 +74,8 @@ func (t StringTags) Value() (driver.Value, error) {
 // menuModel DB struct — terpisah dari domain entity
 type menuModel struct {
 	ID          string     `gorm:"primaryKey;type:uuid;default:gen_random_uuid()"`
+	TenantID    string     `gorm:"type:varchar(255);index"`
+	StoreID     string     `gorm:"type:varchar(255);index"`
 	Name        string     `gorm:"not null"`
 	Description string
 	Price       float64    `gorm:"not null"`
@@ -132,6 +134,8 @@ func (r *menuRepository) GetAll(ctx context.Context) ([]domain.Menu, error) {
 
 func (r *menuRepository) Update(ctx context.Context, m *domain.Menu) error {
 	updates := map[string]interface{}{
+		"tenant_id":    m.TenantID,
+		"store_id":     m.StoreID,
 		"name":         m.Name,
 		"description":  m.Description,
 		"price":        m.Price,
@@ -153,6 +157,8 @@ func (r *menuRepository) Delete(ctx context.Context, id string) error {
 func toMenuModel(m *domain.Menu) *menuModel {
 	return &menuModel{
 		ID:          m.ID,
+		TenantID:    m.TenantID,
+		StoreID:     m.StoreID,
 		Name:        m.Name,
 		Description: m.Description,
 		Price:       m.Price,
@@ -167,6 +173,8 @@ func toMenuModel(m *domain.Menu) *menuModel {
 func toMenuDomain(m menuModel) *domain.Menu {
 	return &domain.Menu{
 		ID:          m.ID,
+		TenantID:    m.TenantID,
+		StoreID:     m.StoreID,
 		Name:        m.Name,
 		Description: m.Description,
 		Price:       m.Price,

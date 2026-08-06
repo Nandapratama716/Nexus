@@ -55,6 +55,8 @@ type OrderItem struct {
 // Order entity murni
 type Order struct {
 	ID            string        `json:"id"`
+	TenantID      string        `json:"tenant_id,omitempty"`
+	StoreID       string        `json:"store_id,omitempty"`
 	UserID        string        `json:"user_id"`
 	TableNumber   string        `json:"table_number"`
 	Items          []OrderItem   `json:"items" gorm:"serializer:json"`

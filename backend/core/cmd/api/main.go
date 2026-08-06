@@ -13,7 +13,6 @@ import (
 
 	delivery "github.com/nanda/nexus/core/delivery/http"
 	ws "github.com/nanda/nexus/core/delivery/ws"
-	"github.com/nanda/nexus/core/domain"
 	"github.com/nanda/nexus/core/infrastructure"
 	"github.com/nanda/nexus/core/repository"
 	"github.com/nanda/nexus/core/usecase"
@@ -31,11 +30,18 @@ func main() {
 		log.Fatalf("Gagal koneksi DB: %v", err)
 	}
 
-	// AutoMigrate
-	log.Println("Menjalankan AutoMigrate...")
-	err = db.AutoMigrate(&domain.User{}, &domain.Menu{}, &domain.Order{}, &domain.OrderItem{})
+	// Versioned Database Migration (menggantikan AutoMigrate yang tidak aman untuk production)
+	sqlDB, err := db.DB()
 	if err != nil {
-		log.Fatalf("Gagal AutoMigrate: %v", err)
+		log.Fatalf("Gagal mendapatkan sql.DB dari GORM: %v", err)
+	}
+	migrator, err := infrastructure.NewMigrator(sqlDB, "migrations")
+	if err != nil {
+		log.Printf("[Migrator] Warning: %v (migration files mungkin belum ada, skip)", err)
+	} else {
+		if err := migrator.Up(); err != nil {
+			log.Fatalf("Database migration gagal: %v", err)
+		}
 	}
 
 	rdb, err := infrastructure.ConnectRedis()
@@ -57,10 +63,10 @@ func main() {
 	orderUC := usecase.NewOrderUsecase(orderRepo, menuRepo, menuPublisher)
 
 	// 4. WebSocket Hub & Mock Midtrans
-	hub := ws.NewHub()
+	hub := ws.NewHub(rdb)
 	go hub.Run()
 
-	mockMidtrans := infrastructure.NewMockMidtransClient("SB-Mid-server-MOCK-KEY-12345")
+	midtransClient := infrastructure.NewMidtransClient()
 
 	// 5. Fiber App
 	app := fiber.New(fiber.Config{
@@ -84,7 +90,7 @@ func main() {
 	delivery.NewAuthHandler(app, authUC)
 	delivery.NewMenuHandler(app, menuUC, menuPublisher)
 	delivery.NewOrderHandler(app, orderUC, hub)
-	delivery.NewPaymentHandler(app, orderUC, mockMidtrans)
+	delivery.NewPaymentHandler(app, orderUC, midtransClient)
 
 	// 7. WebSocket endpoint untuk KDS
 	app.Use("/ws", func(c *fiber.Ctx) error {
