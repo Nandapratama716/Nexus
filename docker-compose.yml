@@ -17,6 +17,22 @@ services:
       timeout: 5s
       retries: 5
 
+  # PgBouncer: Connection Pooler proxy untuk horizontal scaling multi-instance Go
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: nexus-pgbouncer
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 20
+    ports:
+      - "6432:6432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   redis:
     image: redis:7-alpine
     container_name: nexus-redis
