@@ -14,6 +14,7 @@ import (
 	delivery "github.com/nanda/nexus/core/delivery/http"
 	ws "github.com/nanda/nexus/core/delivery/ws"
 	"github.com/nanda/nexus/core/infrastructure"
+	"github.com/nanda/nexus/core/middleware"
 	"github.com/nanda/nexus/core/repository"
 	"github.com/nanda/nexus/core/usecase"
 )
@@ -85,6 +86,9 @@ func main() {
 	}))
 	app.Use(logger.New())
 	app.Use(recover.New())
+
+	// Tenant Context Middleware — set PostgreSQL session variable untuk RLS
+	app.Use(middleware.TenantContext(db))
 
 	// 6. HTTP Handlers (injeksi usecases)
 	delivery.NewAuthHandler(app, authUC)
