@@ -31,9 +31,11 @@ func JWTProtected() fiber.Handler {
 			})
 		}
 
-		// Simpan claims ke context Fiber untuk diakses handler
+		// Simpan claims ke context Fiber untuk diakses handler & RLS middleware
 		c.Locals("user_id", claims.UserID)
 		c.Locals("role", claims.Role)
+		c.Locals("tenant_id", claims.TenantID)
+		c.Locals("store_id", claims.StoreID)
 
 		return c.Next()
 	}

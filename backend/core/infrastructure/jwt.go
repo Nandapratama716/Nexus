@@ -8,10 +8,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Claims payload JWT
+// Claims payload JWT yang menyertakan informasi pengguna dan tenant
 type Claims struct {
-	UserID string `json:"user_id"`
-	Role   string `json:"role"`
+	UserID   string `json:"user_id"`
+	Role     string `json:"role"`
+	TenantID string `json:"tenant_id"`
+	StoreID  string `json:"store_id"`
 	jwt.RegisteredClaims
 }
 
@@ -23,11 +25,20 @@ func getJWTSecret() []byte {
 	return []byte(secret)
 }
 
-// GenerateToken buat JWT token baru
-func GenerateToken(userID, role string) (string, error) {
+// GenerateToken buat JWT token baru dengan claims tenant_id dan store_id
+func GenerateToken(userID, role, tenantID, storeID string) (string, error) {
+	if tenantID == "" {
+		tenantID = "default-tenant"
+	}
+	if storeID == "" {
+		storeID = "store-01"
+	}
+
 	claims := &Claims{
-		UserID: userID,
-		Role:   role,
+		UserID:   userID,
+		Role:     role,
+		TenantID: tenantID,
+		StoreID:  storeID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

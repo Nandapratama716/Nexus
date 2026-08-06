@@ -57,7 +57,7 @@ func (u *authUsecase) Login(ctx context.Context, email, password string) (string
 	}
 
 	// Generate JWT token
-	token, err := infrastructure.GenerateToken(user.ID, string(user.Role))
+	token, err := infrastructure.GenerateToken(user.ID, string(user.Role), user.TenantID, user.StoreID)
 	if err != nil {
 		return "", errors.New("gagal membuat token")
 	}
