@@ -35,9 +35,22 @@ func (h *PaymentHandler) HandleMidtransCallback(c *fiber.Ctx) error {
 	signatureKey, _ := payload["signature_key"].(string)
 	transactionStatus, _ := payload["transaction_status"].(string)
 
-	log.Printf("[Midtrans Webhook] Update transaksi untuk Order %s (Status: %s)\n", orderID, transactionStatus)
+	log.Printf("[Midtrans Webhook] Menerima notifikasi untuk Order: %s (Status: %s)\n", orderID, transactionStatus)
 
-	// Verifikasi HMAC SHA512 Signature jika signatureKey disertakan oleh Midtrans
+	if orderID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "order_id wajib ada"})
+	}
+
+	// 1. Idempotency Check: Cek apakah order sudah settled sebelumnya
+	existingOrder, err := h.OrderUsecase.GetOrder(c.Context(), orderID)
+	if err == nil && existingOrder != nil {
+		if existingOrder.PaymentStatus == domain.PaymentSettled {
+			log.Printf("[Midtrans Webhook Idempotent] Order %s sudah berstatus settled, skip proses ulang.\n", orderID)
+			return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "order already settled (idempotent)"})
+		}
+	}
+
+	// 2. Verifikasi HMAC SHA512 Signature
 	if signatureKey != "" && h.MidtransClient != nil {
 		isValid := h.MidtransClient.VerifySignatureKey(signatureKey, orderID, statusCode, grossAmount)
 		if !isValid {
@@ -46,7 +59,16 @@ func (h *PaymentHandler) HandleMidtransCallback(c *fiber.Ctx) error {
 				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Invalid HMAC SHA512 Signature Key"})
 			}
 		} else {
-			log.Printf("[Midtrans Webhook] Signature Key terverifikasi valid (SHA512).")
+			log.Printf("[Midtrans Webhook] HMAC SHA512 Signature Key terverifikasi valid.")
+		}
+	}
+
+	// 3. Defense-in-depth: Verifikasi langsung ke Midtrans Transaction Status API (di Production)
+	if h.MidtransClient != nil && h.MidtransClient.IsProduction {
+		statusResp, err := h.MidtransClient.CheckTransactionStatus(orderID)
+		if err == nil && statusResp != nil && statusResp.TransactionStatus != "" {
+			log.Printf("[Midtrans Status API Verified] Confirmed status dari API Midtrans: %s (Body: %s)", statusResp.TransactionStatus, transactionStatus)
+			transactionStatus = statusResp.TransactionStatus
 		}
 	}
 
@@ -63,8 +85,8 @@ func (h *PaymentHandler) HandleMidtransCallback(c *fiber.Ctx) error {
 		status = domain.PaymentPending
 	}
 
-	// Update via usecase
-	err := h.OrderUsecase.HandlePaymentWebhook(c.Context(), orderID, status)
+	// Update status via usecase
+	err = h.OrderUsecase.HandlePaymentWebhook(c.Context(), orderID, status)
 	if err != nil {
 		log.Printf("[Webhook Error] Gagal update order status: %v\n", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Gagal update status pembayaran order"})

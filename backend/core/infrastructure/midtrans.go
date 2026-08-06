@@ -6,14 +6,16 @@ import (
 	"log"
 
 	"github.com/midtrans/midtrans-go"
+	"github.com/midtrans/midtrans-go/coreapi"
 	"github.com/midtrans/midtrans-go/snap"
 )
 
-// MidtransClient pembungkus SDK Midtrans resmi
+// MidtransClient pembungkus SDK Midtrans resmi (Snap & Core API)
 type MidtransClient struct {
 	ServerKey    string
 	IsProduction bool
 	snapClient   snap.Client
+	coreClient   coreapi.Client
 }
 
 // NewMidtransClient menginisialisasi SDK Midtrans resmi (Sandbox / Production)
@@ -33,10 +35,14 @@ func NewMidtransClient() *MidtransClient {
 	var sClient snap.Client
 	sClient.New(serverKey, env)
 
+	var cClient coreapi.Client
+	cClient.New(serverKey, env)
+
 	return &MidtransClient{
 		ServerKey:    serverKey,
 		IsProduction: isProd,
 		snapClient:   sClient,
+		coreClient:   cClient,
 	}
 }
 
@@ -66,6 +72,16 @@ func (m *MidtransClient) CreateSnapTransaction(orderID string, amount int64, cus
 	}
 
 	return snapResp, nil
+}
+
+// CheckTransactionStatus memanggil langsung Midtrans Status API (Defense-in-depth konfirmasi transaksi)
+func (m *MidtransClient) CheckTransactionStatus(orderID string) (*coreapi.TransactionStatusResponse, error) {
+	resp, err := m.coreClient.CheckTransaction(orderID)
+	if err != nil {
+		log.Printf("[Midtrans Status API Error] Gagal konfirmasi order %s: %v", orderID, err)
+		return nil, err
+	}
+	return resp, nil
 }
 
 // VerifySignatureKey memverifikasi HMAC SHA512 dari Webhook Notification Midtrans

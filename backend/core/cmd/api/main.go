@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
@@ -24,6 +28,9 @@ func main() {
 	if err := godotenv.Load("../../.env"); err != nil {
 		log.Println("Warning: tidak menemukan file .env, menggunakan default env vars")
 	}
+
+	// Initialize Zap Structured Logger
+	_, _ = infrastructure.InitLogger()
 
 	// 1. Infrastructure — koneksi DB dan Redis
 	db, err := infrastructure.ConnectDB()
@@ -63,7 +70,7 @@ func main() {
 	menuUC := usecase.NewMenuUsecase(menuRepo)
 	orderUC := usecase.NewOrderUsecase(orderRepo, menuRepo, menuPublisher)
 
-	// 4. WebSocket Hub & Mock Midtrans
+	// 4. WebSocket Hub & Midtrans Client
 	hub := ws.NewHub(rdb)
 	go hub.Run()
 
@@ -71,7 +78,8 @@ func main() {
 
 	// 5. Fiber App
 	app := fiber.New(fiber.Config{
-		AppName: "Nexus Core Service v1.0",
+		AppName:               "Nexus Core Service v1.0",
+		DisableStartupMessage: false,
 	})
 
 	allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
@@ -79,9 +87,10 @@ func main() {
 		allowedOrigins = "*" // default dev mode
 	}
 
+	app.Use(middleware.RequestID())
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: allowedOrigins,
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization, X-Request-ID",
 		AllowMethods: "GET, POST, HEAD, PUT, DELETE, PATCH",
 	}))
 	app.Use(logger.New())
@@ -105,10 +114,60 @@ func main() {
 	})
 	app.Get("/ws/kds", websocket.New(ws.ServeWS(hub)))
 
-	// 8. Health check
+	// 8. Production Health Check Endpoints (Kubernetes Probes)
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok", "service": "nexus-core"})
 	})
+	app.Get("/healthz/liveness", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "alive", "timestamp": time.Now().Unix()})
+	})
+	app.Get("/healthz/readiness", func(c *fiber.Ctx) error {
+		ctx, cancel := context.WithTimeout(c.Context(), 3*time.Second)
+		defer cancel()
 
-	log.Fatal(app.Listen(":8080"))
+		dbErr := sqlDB.PingContext(ctx)
+		redisErr := rdb.Ping(ctx).Err()
+
+		if dbErr != nil || redisErr != nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+				"status":    "not ready",
+				"postgres":  dbErr == nil,
+				"redis":     redisErr == nil,
+				"timestamp": time.Now().Unix(),
+			})
+		}
+
+		return c.JSON(fiber.Map{
+			"status":    "ready",
+			"postgres":  true,
+			"redis":     true,
+			"timestamp": time.Now().Unix(),
+		})
+	})
+
+	// 9. Non-blocking Listen & Graceful Shutdown (SIGTERM / SIGINT)
+	go func() {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "8080"
+		}
+		if err := app.Listen(":" + port); err != nil {
+			log.Printf("[Server Shutdown] Fiber app listener ditutup: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("[Graceful Shutdown] Sinyal penghentian diterima (SIGINT/SIGTERM). Menghentikan server secara aman...")
+
+	if err := app.ShutdownWithTimeout(5 * time.Second); err != nil {
+		log.Printf("[Graceful Shutdown Error] Gagal mematikan Fiber app secara rapi: %v", err)
+	}
+
+	_ = sqlDB.Close()
+	_ = rdb.Close()
+
+	log.Println("[Graceful Shutdown] Seluruh koneksi DB & Redis ditutup. Server berhenti dengan sukses.")
 }
