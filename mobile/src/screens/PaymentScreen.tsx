@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, Platform, Image, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, Platform, Image, ActivityIndicator, FlatList, Alert } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { generateThermalReceiptText } from "../utils/thermalReceipt";
+import { useThermalPrinter } from "../utils/useThermalPrinter";
 import { api } from "../config/api";
 
 type RootStackParamList = {
@@ -50,9 +51,23 @@ export default function PaymentScreen() {
   } = params;
 
   const [printModalVisible, setPrintModalVisible] = useState(false);
+  const [printerModalVisible, setPrinterModalVisible] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<string>("pending");
   const [paymentStatus, setPaymentStatus] = useState<string>(paymentMethod === "cash" ? "settled" : "pending");
   const [simulatingPay, setSimulatingPay] = useState(false);
+
+  // Phase 3.5: Thermal Printer Hook — Bluetooth ESC/POS dengan persistent pairing
+  const {
+    isAvailable: btAvailable,
+    isConnected: printerConnected,
+    connectedDevice: activePrinter,
+    pairedDevices,
+    scanning,
+    scanDevices,
+    connectDevice,
+    disconnectDevice,
+    printText,
+  } = useThermalPrinter();
 
   const isCash = paymentMethod === "cash";
 
@@ -107,6 +122,36 @@ export default function PaymentScreen() {
     cashPaid,
     cashChange,
   });
+
+  /**
+   * handlePrintReceipt — Coba cetak via Bluetooth.
+   * Jika printer tidak terhubung, tampilkan Bluetooth pairing modal.
+   * Jika Bluetooth tidak tersedia (iOS/Web), langsung fallback ke modal preview.
+   */
+  const handlePrintReceipt = async () => {
+    if (!btAvailable) {
+      // iOS / Web: langsung tampilkan struk teks
+      setPrintModalVisible(true);
+      return;
+    }
+
+    if (!printerConnected) {
+      // Android: buka printer selection modal
+      await scanDevices();
+      setPrinterModalVisible(true);
+      return;
+    }
+
+    // Printer terhubung: langsung cetak
+    const result = await printText(receiptText);
+    if (result.fallback) {
+      // Printer disconnect mendadak: fallback ke preview
+      Alert.alert("Printer Terputus", "Koneksi printer terputus. Menampilkan struk digital.");
+      setPrintModalVisible(true);
+    } else {
+      Alert.alert("✅ Berhasil Dicetak", `Struk berhasil dikirim ke printer ${activePrinter?.name}.`);
+    }
+  };
 
   const getStatusBadge = () => {
     switch (currentStatus) {
@@ -217,12 +262,25 @@ export default function PaymentScreen() {
         )}
 
         {/* Receipt Action Button */}
+        {/* Print Button — adaptive: Bluetooth printer jika tersedia, fallback ke modal preview */}
         <TouchableOpacity
           style={styles.printBtn}
-          onPress={() => setPrintModalVisible(true)}
+          onPress={handlePrintReceipt}
         >
-          <Text style={styles.printBtnText}>🖨️ Struk Pembayaran / Thermal Receipt</Text>
+          <Text style={styles.printBtnText}>
+            {printerConnected
+              ? `🖨️ Cetak ke ${activePrinter?.name}`
+              : btAvailable
+              ? "🔵 Hubungkan & Cetak Thermal"
+              : "🖨️ Struk Pembayaran / Thermal Receipt"}
+          </Text>
         </TouchableOpacity>
+
+        {printerConnected && (
+          <TouchableOpacity style={styles.disconnectPrinterBtn} onPress={disconnectDevice}>
+            <Text style={styles.disconnectPrinterText}>Putuskan Koneksi Printer</Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={styles.homeBtn}
@@ -232,7 +290,7 @@ export default function PaymentScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Modal Thermal Struk Preview */}
+      {/* Modal Thermal Struk Preview (Fallback) */}
       <Modal visible={printModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -244,6 +302,64 @@ export default function PaymentScreen() {
             <TouchableOpacity
               style={styles.closeBtn}
               onPress={() => setPrintModalVisible(false)}
+            >
+              <Text style={styles.closeBtnText}>Tutup</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Phase 3.5: Bluetooth Printer Selection Modal */}
+      <Modal visible={printerModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>🔵 Pilih Printer Bluetooth</Text>
+            <Text style={styles.modalSubtitle}>Printer Bluetooth yang Sudah Dipasangkan</Text>
+
+            {scanning ? (
+              <View style={{ alignItems: "center", padding: 20 }}>
+                <ActivityIndicator color="#533afd" size="large" />
+                <Text style={{ marginTop: 12, color: "#64748b" }}>Mencari printer Bluetooth...</Text>
+              </View>
+            ) : pairedDevices.length === 0 ? (
+              <View style={{ padding: 20, alignItems: "center" }}>
+                <Text style={{ fontSize: 13, color: "#94a3b8", textAlign: "center" }}>
+                  Tidak ada printer Bluetooth yang terpasang.{"\n"}Pasangkan dulu di Pengaturan Bluetooth Android.
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={pairedDevices}
+                keyExtractor={(d) => d.address}
+                style={{ maxHeight: 250, width: "100%" }}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.printerDeviceRow}
+                    onPress={async () => {
+                      const ok = await connectDevice(item);
+                      if (ok) {
+                        setPrinterModalVisible(false);
+                        const result = await printText(receiptText);
+                        if (result.fallback) {
+                          setPrintModalVisible(true);
+                        } else {
+                          Alert.alert("✅ Berhasil Dicetak", `Struk dikirim ke ${item.name}.`);
+                        }
+                      } else {
+                        Alert.alert("Gagal Terhubung", `Tidak dapat terhubung ke ${item.name}.`);
+                      }
+                    }}
+                  >
+                    <Text style={styles.printerDeviceName}>{item.name}</Text>
+                    <Text style={styles.printerDeviceAddr}>{item.address}</Text>
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+
+            <TouchableOpacity
+              style={[styles.closeBtn, { marginTop: 12 }]}
+              onPress={() => setPrinterModalVisible(false)}
             >
               <Text style={styles.closeBtnText}>Tutup</Text>
             </TouchableOpacity>
@@ -557,5 +673,40 @@ const styles = StyleSheet.create({
   closeBtnText: {
     color: "#ffffff",
     fontWeight: "600",
+  },
+  disconnectPrinterBtn: {
+    marginTop: 8,
+    paddingVertical: 10,
+    borderRadius: 100,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  disconnectPrinterText: {
+    color: "#94a3b8",
+    fontSize: 12,
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: "#64748b",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  printerDeviceRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f5f9",
+  },
+  printerDeviceName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#0d253d",
+  },
+  printerDeviceAddr: {
+    fontSize: 11,
+    color: "#94a3b8",
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    marginTop: 2,
   },
 });

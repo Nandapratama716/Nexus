@@ -118,7 +118,7 @@ func main() {
 	delivery.NewOrderHandler(app, orderUC, hub)
 	delivery.NewPaymentHandler(app, orderUC, midtransClient)
 
-	// 7. WebSocket endpoint untuk KDS
+	// 7. WebSocket endpoint untuk KDS (memungkinkan Cross-Origin WS connection)
 	app.Use("/ws", func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
 			c.Locals("allowed", true)
@@ -126,7 +126,9 @@ func main() {
 		}
 		return fiber.ErrUpgradeRequired
 	})
-	app.Get("/ws/kds", websocket.New(ws.ServeWS(hub)))
+	app.Get("/ws/kds", websocket.New(ws.ServeWS(hub), websocket.Config{
+		Origins: []string{"*"},
+	}))
 
 	// 8. Production Health Check Endpoints (Kubernetes Probes)
 	app.Get("/health", func(c *fiber.Ctx) error {

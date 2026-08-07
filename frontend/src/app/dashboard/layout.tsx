@@ -22,6 +22,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Link href="/dashboard/menu" className={`px-4 py-2.5 rounded-lg transition-colors text-[14px] ${pathname === "/dashboard/menu" ? "bg-white/15 text-white font-normal" : "text-white/70 hover:bg-white/5"}`}>
             Menu Manager
           </Link>
+          <Link href="/dashboard/floor-plan" className={`px-4 py-2.5 rounded-lg transition-colors text-[14px] ${pathname === "/dashboard/floor-plan" ? "bg-white/15 text-white font-normal" : "text-white/70 hover:bg-white/5"}`}>
+            Floor Plan Grid
+          </Link>
           <Link href="/dashboard/reports" className={`px-4 py-2.5 rounded-lg transition-colors text-[14px] ${pathname === "/dashboard/reports" ? "bg-white/15 text-white font-normal" : "text-white/70 hover:bg-white/5"}`}>
             Reports & Analytics
           </Link>

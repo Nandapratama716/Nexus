@@ -21,7 +21,66 @@ type Order = {
 export default function KDSPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(true); // Default KDS Dark Mode untuk koki dapur
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
+
+  // Phase 2.3: Synthesize Chime Sound via Web Audio API (Ding-Dong Effect)
+  const playChimeSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+
+      // Osc 1: High Pitch (Ding)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      gain1.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(ctx.currentTime);
+      osc1.stop(ctx.currentTime + 0.5);
+
+      // Osc 2: Lower Pitch (Dong)
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = "sine";
+      osc2.frequency.setValueAtTime(880, ctx.currentTime + 0.25); // A5
+      gain2.gain.setValueAtTime(0.4, ctx.currentTime + 0.25);
+      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.9);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(ctx.currentTime + 0.25);
+      osc2.stop(ctx.currentTime + 0.9);
+    } catch (e) {
+      console.warn("[KDS Chime] Audio Context error:", e);
+    }
+  };
+
+  // Unlock AudioContext on first user interaction (Browser Autoplay Policy Guard)
+  useEffect(() => {
+    const handleFirstUserInteraction = () => {
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const dummyCtx = new AudioCtx();
+          dummyCtx.resume().then(() => {
+            setAudioUnlocked(true);
+            console.log("[KDS Audio] AudioContext unlocked successfully via user gesture.");
+          });
+        }
+      } catch (e) {
+        console.warn("Could not unlock AudioContext:", e);
+      }
+      window.removeEventListener("click", handleFirstUserInteraction);
+    };
+
+    window.addEventListener("click", handleFirstUserInteraction);
+    return () => window.removeEventListener("click", handleFirstUserInteraction);
+  }, []);
 
   // 1. Fetch initial active orders directly from PostgreSQL Database via Go Core API
   const fetchActiveOrders = async () => {
@@ -46,10 +105,8 @@ export default function KDSPage() {
       socketRef.current = socket;
 
       socket.onopen = () => {
-        console.log("[KDS WS] Terhubung ke WebSocket server. Melakukan resync data...");
+        console.log("[KDS WS] Terhubung ke WebSocket server. Resyncing data...");
         setIsConnected(true);
-        // HARDENING: Setiap kali WS tersambung (termasuk reconnect setelah disconnect),
-        // jalankan fetchActiveOrders untuk resync data dari PostgreSQL agar KDS tidak pernah stale!
         fetchActiveOrders();
       };
 
@@ -59,7 +116,10 @@ export default function KDSPage() {
           if (data.type === "init") {
             setOrders(data.payload || []);
           } else if (data.type === "new_order" || data.type === "update_order") {
-            fetchActiveOrders(); // Re-sync active orders dari DB saat ada order baru / update status
+            fetchActiveOrders();
+            if (data.type === "new_order") {
+              playChimeSound(); // Play audio chime on new order!
+            }
           }
         } catch (e) {
           console.error("[KDS WS] Error parsing WS message:", e);
@@ -67,9 +127,8 @@ export default function KDSPage() {
       };
 
       socket.onclose = () => {
-        console.warn("[KDS WS] Disconnected dari WebSocket server. Menjadwalkan reconnect otomatis...");
+        console.warn("[KDS WS] Disconnected. Reconnecting in 3s...");
         setIsConnected(false);
-        // Reconnect otomatis dalam 3 detik jika koneksi terputus
         reconnectTimer = setTimeout(connectWebSocket, 3000);
       };
 
@@ -89,11 +148,42 @@ export default function KDSPage() {
     };
   }, []);
 
+  // Phase 2.4: Keyboard Shortcuts with Input Focus Guard
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Input Field Guard: Jangan jalankan shortcut jika fokus sedang di input / textarea
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      if (targetTag === "INPUT" || targetTag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable) {
+        return;
+      }
+
+      if (e.code === "Space") {
+        e.preventDefault();
+        // Space shortcut: Advance status pesanan terlama di kolom pending -> preparing, atau preparing -> ready
+        setOrders((prevOrders) => {
+          const pendingOrders = prevOrders.filter((o) => o.status === "pending");
+          if (pendingOrders.length > 0) {
+            const oldest = pendingOrders[0];
+            updateStatus(oldest.id, "preparing");
+          } else {
+            const prepOrders = prevOrders.filter((o) => o.status === "preparing");
+            if (prepOrders.length > 0) {
+              const oldestPrep = prepOrders[0];
+              updateStatus(oldestPrep.id, "ready");
+            }
+          }
+          return prevOrders;
+        });
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   const updateStatus = async (id: string, newStatus: string) => {
-    // Optimistic UI update
     setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: newStatus as any } : o)));
 
-    // Kirim request ke backend via HTTP (backend akan broadcast via WS & Redis Pub/Sub)
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
     await fetch(`${apiUrl}/orders/${id}/status`, {
       method: "PATCH",
@@ -109,7 +199,7 @@ export default function KDSPage() {
   ];
 
   return (
-    <div className="h-screen bg-canvas-soft flex flex-col font-sans overflow-hidden">
+    <div className={`h-screen flex flex-col font-sans overflow-hidden transition-colors ${isDarkMode ? "bg-slate-950 text-slate-100" : "bg-canvas-soft text-ink"}`}>
       {/* KDS Header Bar */}
       <header className="bg-brand-dark text-white px-8 py-5 flex justify-between items-center shrink-0 shadow-md">
         <div className="flex items-center gap-6">
@@ -125,13 +215,41 @@ export default function KDSPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 bg-black/30 px-4 py-2 rounded-full border border-white/10">
-          <div className={`w-3 h-3 rounded-full ${isConnected ? "bg-emerald-400" : "bg-ruby"} animate-pulse`} />
-          <span className="text-[12px] text-white/90 uppercase tracking-widest font-medium">
-            {isConnected ? "Live Connected" : "Reconnecting..."}
-          </span>
+        <div className="flex items-center gap-4">
+          {/* Audio Chime Status Indicator */}
+          <button
+            onClick={playChimeSound}
+            className={`text-xs px-3 py-1.5 rounded-full border transition-colors cursor-pointer flex items-center gap-1.5 ${
+              audioUnlocked ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" : "bg-amber-500/20 text-amber-300 border-amber-500/30 animate-bounce"
+            }`}
+            title="Klik untuk tes suara bel order baru"
+          >
+            🔊 {audioUnlocked ? "Chime Audio Ready" : "Klik Unlock Audio"}
+          </button>
+
+          {/* Phase 2.2: KDS Dark Mode Toggle */}
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="text-xs bg-white/10 hover:bg-white/20 text-white px-3.5 py-1.5 rounded-full border border-white/10 transition-colors cursor-pointer"
+          >
+            {isDarkMode ? "🌙 Dark Mode ON" : "☀️ Light Mode"}
+          </button>
+
+          {/* WS Live Status */}
+          <div className="flex items-center gap-3 bg-black/30 px-4 py-2 rounded-full border border-white/10">
+            <div className={`w-3 h-3 rounded-full ${isConnected ? "bg-emerald-400" : "bg-ruby"} animate-pulse`} />
+            <span className="text-[12px] text-white/90 uppercase tracking-widest font-medium">
+              {isConnected ? "Live Connected" : "Reconnecting..."}
+            </span>
+          </div>
         </div>
       </header>
+
+      {/* Keyboard Shortcut Hint Banner */}
+      <div className={`px-8 py-2 text-xs flex justify-between items-center border-b ${isDarkMode ? "bg-slate-900 border-slate-800 text-slate-400" : "bg-white border-hairline text-ink-mute"}`}>
+        <span>💡 <b>Shortcut Keyboard:</b> Tekan <kbd className="bg-primary/20 text-primary px-1.5 py-0.5 rounded font-mono">[SPACE]</kbd> untuk memproses order terlama secara cepat.</span>
+        <span>KDS Status: {orders.length} pesanan aktif</span>
+      </div>
 
       {/* Kanban Columns Layout */}
       <main className="flex-1 p-6 md:p-8 grid grid-cols-1 md:grid-cols-3 gap-6 overflow-hidden">
@@ -141,10 +259,12 @@ export default function KDSPage() {
           return (
             <div
               key={col.id}
-              className={`bg-white rounded-2xl p-5 flex flex-col border-t-4 border border-hairline shadow-xs ${col.color} overflow-hidden`}
+              className={`rounded-2xl p-5 flex flex-col border-t-4 border shadow-xs ${col.color} overflow-hidden ${
+                isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-hairline"
+              }`}
             >
               <div className="flex justify-between items-center mb-4 pb-3 border-b border-hairline shrink-0">
-                <h2 className="text-lg font-normal text-ink">{col.title}</h2>
+                <h2 className={`text-lg font-normal ${isDarkMode ? "text-slate-100" : "text-ink"}`}>{col.title}</h2>
                 <span className={`text-[12px] font-medium px-3 py-1 rounded-full ${col.badgeBg}`}>
                   {colOrders.length} orders
                 </span>
@@ -153,36 +273,38 @@ export default function KDSPage() {
               {/* Scrollable Order Cards inside Column */}
               <div className="flex-1 overflow-y-auto flex flex-col gap-4 pr-1">
                 {colOrders.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-48 text-ink-mute font-light text-[14px]">
+                  <div className={`flex flex-col items-center justify-center h-48 font-light text-[14px] ${isDarkMode ? "text-slate-500" : "text-ink-mute"}`}>
                     No orders in {col.title.toLowerCase()}
                   </div>
                 ) : (
                   colOrders.map((order) => (
                     <div
                       key={order.id}
-                      className="bg-canvas-soft rounded-xl p-5 border border-hairline shadow-xs flex flex-col justify-between"
+                      className={`rounded-xl p-5 border shadow-xs flex flex-col justify-between ${
+                        isDarkMode ? "bg-slate-800/80 border-slate-700 text-slate-100" : "bg-canvas-soft border-hairline text-ink"
+                      }`}
                     >
                       <div>
                         <div className="flex justify-between items-start mb-3">
                           <span className="bg-brand-dark text-white text-[15px] font-medium px-3 py-1 rounded-lg">
                             Table {order.table_number || "-"} ({order.order_type === "takeaway" ? "Takeaway" : "Dine In"})
                           </span>
-                          <span className="text-[12px] text-ink-mute tabular-nums">
+                          <span className={`text-[12px] tabular-nums ${isDarkMode ? "text-slate-400" : "text-ink-mute"}`}>
                             {new Date(order.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
                           </span>
                         </div>
 
                         <ul className="mb-4 space-y-2">
                           {order.items?.map((item, idx) => (
-                            <li key={idx} className="flex flex-col border-b border-hairline/60 pb-2">
-                              <div className="flex justify-between text-[15px] text-ink font-medium">
+                            <li key={idx} className={`flex flex-col border-b pb-2 ${isDarkMode ? "border-slate-700" : "border-hairline/60"}`}>
+                              <div className="flex justify-between text-[15px] font-medium">
                                 <span>{item.menu_name}</span>
                                 <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-md text-[13px] font-semibold">
                                   x{item.quantity}
                                 </span>
                               </div>
                               {item.notes ? (
-                                <span className="text-[12px] text-primary-deep font-light italic mt-0.5">
+                                <span className="text-[12px] text-emerald-400 font-light italic mt-0.5">
                                   📝 {item.notes}
                                 </span>
                               ) : null}
@@ -211,7 +333,9 @@ export default function KDSPage() {
                         {col.id === "ready" && (
                           <button
                             onClick={() => updateStatus(order.id, "done")}
-                            className="w-full bg-canvas border border-hairline text-ink py-2.5 rounded-full text-[14px] font-medium hover:bg-canvas-soft transition-colors cursor-pointer"
+                            className={`w-full border py-2.5 rounded-full text-[14px] font-medium transition-colors cursor-pointer ${
+                              isDarkMode ? "bg-slate-700 border-slate-600 text-white hover:bg-slate-600" : "bg-canvas border-hairline text-ink hover:bg-canvas-soft"
+                            }`}
                           >
                             ✅ Complete Order
                           </button>

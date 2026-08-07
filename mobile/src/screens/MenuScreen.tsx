@@ -9,6 +9,7 @@ import {
   Image,
   TextInput,
   ScrollView,
+  Animated,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -31,11 +32,13 @@ export default function MenuScreen() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedFlavorTag, setSelectedFlavorTag] = useState("all");
 
   const navigation = useNavigation<NavigationProp>();
-  const { items, addItem, removeItem, tableNumber } = useCartStore();
+  const { items, addItem, removeItem, tableNumber, getTotal } = useCartStore();
 
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
+  const totalPrice = getTotal();
 
   useEffect(() => {
     fetchMenus();
@@ -60,13 +63,21 @@ export default function MenuScreen() {
     { id: "snack", label: "Cemilan 🍿" },
   ];
 
+  const flavorTags = [
+    { id: "all", label: "Semua Rasa 🍽️" },
+    { id: "pedas", label: "Pedas 🌶️" },
+    { id: "manis", label: "Manis 🍯" },
+    { id: "dingin", label: "Segar / Dingin 🧊" },
+    { id: "veg", label: "Vegetarian 🥗" },
+  ];
+
   const promos = [
     { id: "1", title: "Diskon 10%", code: "NEXUS10", desc: "Gunakan voucher NEXUS10 saat checkout!", bg: "#533afd" },
     { id: "2", title: "Potongan Rp 5rb", code: "HEMAT5K", desc: "Gunakan kode HEMAT5K min 20rb", bg: "#10B981" },
     { id: "3", title: "AI Assistant 🤖", code: "TANYA AI", desc: "Bingung pilih menu? Tanya ke Nexus AI!", bg: "#ea2261" },
   ];
 
-  // Filter menus based on Category & Search Query
+  // Filter menus based on Category, Search Query, and Flavor/Dietary Tag
   const filteredMenus = menus.filter((menu) => {
     const matchesCategory =
       selectedCategory === "all" || menu.category.toLowerCase() === selectedCategory.toLowerCase();
@@ -75,7 +86,17 @@ export default function MenuScreen() {
       menu.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (menu.description && menu.description.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    return matchesCategory && matchesSearch;
+    const menuDescStr = ((menu.description || "") + " " + menu.name).toLowerCase();
+
+    const matchesFlavor =
+      selectedFlavorTag === "all" ||
+      menuDescStr.includes(selectedFlavorTag) ||
+      (selectedFlavorTag === "pedas" && (menuDescStr.includes("pedas") || menuDescStr.includes("spicy") || menuDescStr.includes("sambal"))) ||
+      (selectedFlavorTag === "manis" && (menuDescStr.includes("manis") || menuDescStr.includes("sweet") || menuDescStr.includes("gula"))) ||
+      (selectedFlavorTag === "dingin" && (menuDescStr.includes("dingin") || menuDescStr.includes("ice") || menuDescStr.includes("es"))) ||
+      (selectedFlavorTag === "veg" && (menuDescStr.includes("sayur") || menuDescStr.includes("tofu") || menuDescStr.includes("tempe") || menuDescStr.includes("sehat")));
+
+    return matchesCategory && matchesSearch && matchesFlavor;
   });
 
   const renderHeader = () => (
@@ -122,6 +143,24 @@ export default function MenuScreen() {
             >
               <Text style={[styles.categoryChipText, isActive && styles.categoryChipTextActive]}>
                 {cat.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {/* Phase 3.3: Flavor & Dietary Filter Chips */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.flavorScrollView}>
+        {flavorTags.map((tag) => {
+          const isActive = selectedFlavorTag === tag.id;
+          return (
+            <TouchableOpacity
+              key={tag.id}
+              style={[styles.flavorChip, isActive && styles.flavorChipActive]}
+              onPress={() => setSelectedFlavorTag(tag.id)}
+            >
+              <Text style={[styles.flavorChipText, isActive && styles.flavorChipTextActive]}>
+                {tag.label}
               </Text>
             </TouchableOpacity>
           );
@@ -186,6 +225,41 @@ export default function MenuScreen() {
     );
   };
 
+  const MenuSkeletonItem = () => {
+    const opacity = React.useRef(new Animated.Value(0.3)).current;
+
+    useEffect(() => {
+      const animation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(opacity, {
+            toValue: 0.8,
+            duration: 750,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, {
+            toValue: 0.3,
+            duration: 750,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      animation.start();
+      return () => animation.stop();
+    }, [opacity]);
+
+    return (
+      <View style={styles.card}>
+        <Animated.View style={[styles.skeletonImage, { opacity }]} />
+        <View style={styles.cardInfo}>
+          <Animated.View style={[styles.skeletonTitle, { opacity }]} />
+          <Animated.View style={[styles.skeletonDesc, { opacity }]} />
+          <Animated.View style={[styles.skeletonPrice, { opacity }]} />
+        </View>
+        <Animated.View style={[styles.skeletonButton, { opacity }]} />
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       {/* Top Header */}
@@ -205,7 +279,13 @@ export default function MenuScreen() {
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#533afd" style={styles.loader} />
+        <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+          {renderHeader()}
+          <MenuSkeletonItem />
+          <MenuSkeletonItem />
+          <MenuSkeletonItem />
+          <MenuSkeletonItem />
+        </ScrollView>
       ) : (
         <FlatList
           data={filteredMenus}
@@ -220,6 +300,19 @@ export default function MenuScreen() {
             </View>
           }
         />
+      )}
+
+      {/* Dynamic Sticky Bottom Cart Bar */}
+      {totalItems > 0 && (
+        <View style={styles.stickyCartBar}>
+          <View>
+            <Text style={styles.stickyCartTitle}>{totalItems} Item Ditempatkan</Text>
+            <Text style={styles.stickyCartPrice}>Total: Rp {totalPrice.toLocaleString("id-ID")}</Text>
+          </View>
+          <TouchableOpacity style={styles.stickyCartBtn} onPress={() => navigation.navigate("Cart")}>
+            <Text style={styles.stickyCartBtnText}>Lihat Keranjang 🛒</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       {/* Floating AI Order Assistant */}
@@ -369,6 +462,30 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontWeight: "600",
   },
+  flavorScrollView: {
+    marginBottom: 8,
+  },
+  flavorChip: {
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 100,
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  flavorChipActive: {
+    backgroundColor: "#ea2261",
+    borderColor: "#ea2261",
+  },
+  flavorChipText: {
+    fontSize: 12,
+    color: "#475569",
+  },
+  flavorChipTextActive: {
+    color: "#ffffff",
+    fontWeight: "600",
+  },
   loader: {
     flex: 1,
     justifyContent: "center",
@@ -496,5 +613,78 @@ const styles = StyleSheet.create({
   emptyText: {
     color: "#94a3b8",
     fontSize: 14,
+  },
+  skeletonImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 12,
+    marginRight: 14,
+    backgroundColor: "#cbd5e1",
+  },
+  skeletonTitle: {
+    width: "70%",
+    height: 16,
+    borderRadius: 4,
+    backgroundColor: "#cbd5e1",
+    marginBottom: 8,
+  },
+  skeletonDesc: {
+    width: "90%",
+    height: 12,
+    borderRadius: 4,
+    backgroundColor: "#e2e8f0",
+    marginBottom: 8,
+  },
+  skeletonPrice: {
+    width: "40%",
+    height: 14,
+    borderRadius: 4,
+    backgroundColor: "#cbd5e1",
+  },
+  skeletonButton: {
+    width: 76,
+    height: 32,
+    borderRadius: 100,
+    backgroundColor: "#cbd5e1",
+  },
+  stickyCartBar: {
+    position: "absolute",
+    bottom: 20,
+    left: 20,
+    right: 90,
+    backgroundColor: "#0d253d",
+    borderRadius: 100,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 998,
+  },
+  stickyCartTitle: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  stickyCartPrice: {
+    color: "#a7f3d0",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  stickyCartBtn: {
+    backgroundColor: "#ea2261",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 100,
+  },
+  stickyCartBtnText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "700",
   },
 });

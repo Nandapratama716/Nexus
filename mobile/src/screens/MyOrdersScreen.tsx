@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Animated,
+  Easing,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -104,6 +106,106 @@ export default function MyOrdersScreen() {
     }
   };
 
+  // Phase 3.4: Lottie-style Status Animation using Animated API
+  const StatusAnimation = ({ status }: { status: string }) => {
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    const spinAnim = useRef(new Animated.Value(0)).current;
+    const bounceAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+      if (status === "pending") {
+        // Pulse ring effect for pending
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulseAnim, { toValue: 1.3, duration: 600, useNativeDriver: true }),
+            Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+          ])
+        ).start();
+      } else if (status === "preparing") {
+        // Continuous spin for cooking
+        Animated.loop(
+          Animated.timing(spinAnim, {
+            toValue: 1,
+            duration: 1500,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          })
+        ).start();
+      } else if (status === "ready") {
+        // Bounce for ready
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(bounceAnim, { toValue: -10, duration: 300, useNativeDriver: true }),
+            Animated.timing(bounceAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+            Animated.delay(600),
+          ])
+        ).start();
+      }
+    }, [status]);
+
+    const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+
+    const config: Record<string, { icon: string; color: string; bg: string }> = {
+      pending:   { icon: "⏳", color: "#92400e", bg: "#fef9c3" },
+      preparing: { icon: "🔥", color: "#1e40af", bg: "#eff6ff" },
+      ready:     { icon: "🔔", color: "#065f46", bg: "#d1fae5" },
+      done:      { icon: "✅", color: "#374151", bg: "#f3f4f6" },
+      cancelled: { icon: "❌", color: "#991b1b", bg: "#fee2e2" },
+    };
+    const cfg = config[status] || config["pending"];
+
+    return (
+      <View style={{ alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
+        {status === "pending" && (
+          <Animated.View style={{
+            width: 72, height: 72, borderRadius: 36,
+            backgroundColor: cfg.bg,
+            alignItems: "center", justifyContent: "center",
+            transform: [{ scale: pulseAnim }],
+          }}>
+            <Text style={{ fontSize: 32 }}>{cfg.icon}</Text>
+          </Animated.View>
+        )}
+        {status === "preparing" && (
+          <Animated.View style={{
+            width: 72, height: 72, borderRadius: 36,
+            backgroundColor: cfg.bg,
+            alignItems: "center", justifyContent: "center",
+            transform: [{ rotate: spin }],
+          }}>
+            <Text style={{ fontSize: 32 }}>{cfg.icon}</Text>
+          </Animated.View>
+        )}
+        {status === "ready" && (
+          <Animated.View style={{
+            width: 72, height: 72, borderRadius: 36,
+            backgroundColor: cfg.bg,
+            alignItems: "center", justifyContent: "center",
+            transform: [{ translateY: bounceAnim }],
+          }}>
+            <Text style={{ fontSize: 32 }}>{cfg.icon}</Text>
+          </Animated.View>
+        )}
+        {(status === "done" || status === "cancelled") && (
+          <View style={{
+            width: 72, height: 72, borderRadius: 36,
+            backgroundColor: cfg.bg,
+            alignItems: "center", justifyContent: "center",
+          }}>
+            <Text style={{ fontSize: 32 }}>{cfg.icon}</Text>
+          </View>
+        )}
+        <Text style={{ color: cfg.color, fontWeight: "700", fontSize: 13, marginTop: 8 }}>
+          {status === "pending" && "⏳ Menunggu Dapur"}
+          {status === "preparing" && "🔥 Sedang Dimasak"}
+          {status === "ready" && "🔔 SIAP DIAMBIL!"}
+          {status === "done" && "✅ Selesai"}
+          {status === "cancelled" && "❌ Dibatalkan"}
+        </Text>
+      </View>
+    );
+  };
+
   const renderOrderItem = ({ item }: { item: Order }) => {
     const badge = getStatusBadge(item.status);
     const isReady = item.status === "ready";
@@ -117,10 +219,10 @@ export default function MyOrdersScreen() {
               Meja {item.table_number} • {item.order_type === "takeaway" ? "Takeaway" : "Dine In"}
             </Text>
           </View>
-          <View style={[styles.badge, { backgroundColor: badge.bg, borderColor: badge.border }]}>
-            <Text style={[styles.badgeText, { color: badge.color }]}>{badge.label}</Text>
-          </View>
         </View>
+
+        {/* Phase 3.4: Lottie-Style Animated Status Indicator */}
+        <StatusAnimation status={item.status} />
 
         {/* Dynamic Notification Banner when Ready */}
         {isReady && (
