@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 
 type OrderItem = {
@@ -20,50 +20,80 @@ type Order = {
 
 export default function KDSPage() {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [ws, setWs] = useState<WebSocket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const socketRef = useRef<WebSocket | null>(null);
+
+  // 1. Fetch initial active orders directly from PostgreSQL Database via Go Core API
+  const fetchActiveOrders = async () => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
+      const res = await fetch(`${apiUrl}/orders/active`);
+      if (res.ok) {
+        const data = await res.json();
+        setOrders(data || []);
+      }
+    } catch (err) {
+      console.warn("[KDS] Gagal fetch active orders dari API:", err);
+    }
+  };
 
   useEffect(() => {
-    // 1. Fetch initial active orders directly from PostgreSQL Database via Go Core API
-    const fetchActiveOrders = async () => {
-      try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
-        const res = await fetch(`${apiUrl}/orders/active`);
-        if (res.ok) {
-          const data = await res.json();
-          setOrders(data || []);
+    let reconnectTimer: NodeJS.Timeout;
+
+    const connectWebSocket = () => {
+      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8080/ws/kds";
+      const socket = new WebSocket(wsUrl);
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        console.log("[KDS WS] Terhubung ke WebSocket server. Melakukan resync data...");
+        setIsConnected(true);
+        // HARDENING: Setiap kali WS tersambung (termasuk reconnect setelah disconnect),
+        // jalankan fetchActiveOrders untuk resync data dari PostgreSQL agar KDS tidak pernah stale!
+        fetchActiveOrders();
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "init") {
+            setOrders(data.payload || []);
+          } else if (data.type === "new_order" || data.type === "update_order") {
+            fetchActiveOrders(); // Re-sync active orders dari DB saat ada order baru / update status
+          }
+        } catch (e) {
+          console.error("[KDS WS] Error parsing WS message:", e);
         }
-      } catch (err) {
-        console.warn("Could not fetch active orders from API:", err);
-      }
+      };
+
+      socket.onclose = () => {
+        console.warn("[KDS WS] Disconnected dari WebSocket server. Menjadwalkan reconnect otomatis...");
+        setIsConnected(false);
+        // Reconnect otomatis dalam 3 detik jika koneksi terputus
+        reconnectTimer = setTimeout(connectWebSocket, 3000);
+      };
+
+      socket.onerror = (err) => {
+        console.error("[KDS WS] WebSocket error:", err);
+        socket.close();
+      };
     };
 
-    fetchActiveOrders();
+    connectWebSocket();
 
-    // 2. Connect to Go Core WebSocket for realtime updates
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8080/ws/kds";
-    const socket = new WebSocket(wsUrl);
-
-    socket.onopen = () => console.log("KDS connected to WebSocket");
-
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === "init") {
-        setOrders(data.payload || []);
-      } else if (data.type === "new_order" || data.type === "update_order") {
-        fetchActiveOrders(); // Re-sync active orders from DB
+    return () => {
+      clearTimeout(reconnectTimer);
+      if (socketRef.current) {
+        socketRef.current.close();
       }
     };
-
-    setWs(socket);
-
-    return () => socket.close();
   }, []);
 
   const updateStatus = async (id: string, newStatus: string) => {
     // Optimistic UI update
     setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: newStatus as any } : o)));
 
-    // Kirim request ke backend via HTTP (backend akan broadcast via WS)
+    // Kirim request ke backend via HTTP (backend akan broadcast via WS & Redis Pub/Sub)
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1";
     await fetch(`${apiUrl}/orders/${id}/status`, {
       method: "PATCH",
@@ -96,9 +126,9 @@ export default function KDSPage() {
         </div>
 
         <div className="flex items-center gap-3 bg-black/30 px-4 py-2 rounded-full border border-white/10">
-          <div className={`w-3 h-3 rounded-full ${ws ? "bg-emerald-400" : "bg-ruby"} animate-pulse`} />
+          <div className={`w-3 h-3 rounded-full ${isConnected ? "bg-emerald-400" : "bg-ruby"} animate-pulse`} />
           <span className="text-[12px] text-white/90 uppercase tracking-widest font-medium">
-            {ws ? "Live Connected" : "Disconnected"}
+            {isConnected ? "Live Connected" : "Reconnecting..."}
           </span>
         </div>
       </header>

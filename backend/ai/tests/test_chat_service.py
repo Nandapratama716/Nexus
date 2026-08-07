@@ -67,7 +67,7 @@ class TestBuildMenuDocument:
         menu = _sample_menu()
         menu["tags"] = []
         doc = _build_menu_document(menu)
-        assert "-" in doc
+        assert "tidak ada tag khusus" in doc
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -239,8 +239,9 @@ def auth_headers(user_id: str = "user-1", role: str = "customer") -> dict:
 
 class TestChatEndpoint:
     def test_chat_unauthenticated_returns_401(self, client):
-        resp = client.post("/api/v1/ai/chat", json={"message": "halo", "session_id": "s1"})
-        assert resp.status_code == 401
+        with patch("app.core.security.JWT_SECRET", "prod-secret-key-12345"):
+            resp = client.post("/api/v1/ai/chat", json={"message": "halo", "session_id": "s1"})
+            assert resp.status_code == 401
 
     def test_chat_invalid_token_returns_401(self, client):
         resp = client.post(

@@ -14,6 +14,7 @@ If Redis server (localhost:6379) is running, executes live integration assertion
 If Redis server is unreachable, gracefully skips live network tests.
 """
 
+import asyncio
 import json
 import uuid
 import pytest
@@ -22,7 +23,7 @@ from unittest.mock import patch
 
 from app.core.config import REDIS_HOST, REDIS_PORT
 from app.repositories.chroma_repo import ChromaMenuRepository
-from app.workers.menu_sync import _handle_message, STREAM_KEY, GROUP_NAME, CONSUMER_NAME
+from app.workers.menu_sync import _handle_message, STREAM_KEY
 
 
 def is_redis_available() -> bool:
@@ -86,7 +87,6 @@ def test_full_redis_stream_to_chromadb_lifecycle(sync_redis, fresh_chroma_repo):
     # -------------------------------------------------------------------------
     # STEP 2: Process stream message via Python Worker handler
     # -------------------------------------------------------------------------
-    import asyncio
     with patch("app.workers.menu_sync.get_chroma_repo", return_value=fresh_chroma_repo):
         asyncio.get_event_loop().run_until_complete(_handle_message(msg_fields))
 

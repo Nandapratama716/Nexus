@@ -121,6 +121,7 @@ func main() {
 	// 7. WebSocket endpoint untuk KDS
 	app.Use("/ws", func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
+			c.Locals("allowed", true)
 			return c.Next()
 		}
 		return fiber.ErrUpgradeRequired

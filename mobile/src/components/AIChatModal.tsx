@@ -141,7 +141,7 @@ export default function AIChatModal() {
           <View style={styles.modalContent}>
             {/* Header */}
             <View style={styles.header}>
-              <View className="flex-row items-center">
+              <View style={styles.headerTitleRow}>
                 <Text style={styles.headerTitle}>Nexus AI Assistant</Text>
                 <View style={styles.statusDot} />
               </View>
@@ -275,6 +275,10 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
+  },
+  headerTitleRow: {
+    flexDirection: "row",
     alignItems: "center",
   },
   headerTitle: {

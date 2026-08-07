@@ -4,17 +4,32 @@ import (
 	"context"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/gofiber/contrib/websocket"
 	"github.com/redis/go-redis/v9"
 )
 
-const RedisKDSEventsChannel = "nexus:kds:events"
+const (
+	RedisKDSEventsChannel = "nexus:kds:events"
+	writeWait             = 10 * time.Second
+	pongWait              = 60 * time.Second
+	pingPeriod            = (pongWait * 9) / 10
+)
 
-// Client representasi koneksi KDS yang terhubung
+// Client representasi koneksi KDS WebSocket yang terhubung
 type Client struct {
+	hub  *Hub
 	conn *websocket.Conn
 	send chan []byte
+	once sync.Once
+}
+
+func (c *Client) close() {
+	c.once.Do(func() {
+		c.hub.unregister <- c
+		_ = c.conn.Close()
+	})
 }
 
 // Hub mengelola semua koneksi WebSocket aktif (in-memory & terdistribusi via Redis Pub/Sub)
@@ -70,16 +85,16 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			h.clients[client] = true
 			h.mu.Unlock()
-			log.Printf("KDS client terhubung. Total: %d", len(h.clients))
+			log.Printf("[WebSocket Hub] KDS client terhubung. Total client aktif: %d", len(h.clients))
 
 		case client := <-h.unregister:
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(client.send)
+				log.Printf("[WebSocket Hub] KDS client terputus. Sisa client aktif: %d", len(h.clients))
 			}
 			h.mu.Unlock()
-			log.Printf("KDS client terputus. Total: %d", len(h.clients))
 
 		case message := <-h.broadcast:
 			h.broadcastLocal(message)
@@ -94,9 +109,9 @@ func (h *Hub) broadcastLocal(message []byte) {
 		select {
 		case client.send <- message:
 		default:
-			// Buffer penuh — hapus client yang lambat
-			close(client.send)
+			// Buffer penuh — hapus zombie client yang lambat
 			delete(h.clients, client)
+			close(client.send)
 		}
 	}
 }
@@ -105,7 +120,7 @@ func (h *Hub) broadcastLocal(message []byte) {
 func (h *Hub) Broadcast(message []byte) {
 	if h.rdb != nil {
 		if err := h.rdb.Publish(context.Background(), RedisKDSEventsChannel, message).Err(); err != nil {
-			log.Printf("[Redis Pub/Sub] Error publishing message: %v", err)
+			log.Printf("[Redis Pub/Sub Error] Gagal publish message: %v", err)
 			h.broadcast <- message // fallback lokal
 		}
 	} else {
@@ -113,36 +128,73 @@ func (h *Hub) Broadcast(message []byte) {
 	}
 }
 
-// ServeWS upgrade HTTP ke WebSocket dan register client ke hub
+// ServeWS upgrade HTTP ke WebSocket, register client ke hub, dan menangani Heartbeat Ping-Pong
 func ServeWS(hub *Hub) func(*websocket.Conn) {
 	return func(conn *websocket.Conn) {
 		client := &Client{
+			hub:  hub,
 			conn: conn,
 			send: make(chan []byte, 256),
 		}
 
 		hub.register <- client
 
-		// Goroutine: kirim pesan dari channel ke koneksi WS
+		// Goroutine Write Loop + Heartbeat Ping Ticker
 		go func() {
+			ticker := time.NewTicker(pingPeriod)
 			defer func() {
-				hub.unregister <- client
-				conn.Close()
+				ticker.Stop()
+				client.close()
 			}()
-			for msg := range client.send {
-				if err := conn.WriteMessage(1, msg); err != nil {
-					return
+
+			for {
+				select {
+				case message, ok := <-client.send:
+					_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
+					if !ok {
+						// Channel ditutup oleh hub (unregister)
+						_ = conn.WriteMessage(websocket.CloseMessage, []byte{})
+						return
+					}
+
+					w, err := conn.NextWriter(websocket.TextMessage)
+					if err != nil {
+						return
+					}
+					_, _ = w.Write(message)
+
+					// Flush semua pesan yang ada di buffer channel
+					n := len(client.send)
+					for i := 0; i < n; i++ {
+						_, _ = w.Write([]byte("\n"))
+						_, _ = w.Write(<-client.send)
+					}
+
+					if err := w.Close(); err != nil {
+						return
+					}
+
+				case <-ticker.C:
+					_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
+					if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+						return
+					}
 				}
 			}
 		}()
 
-		// Goroutine utama: baca pesan dari client (untuk keep-alive / ping)
-		defer func() {
-			hub.unregister <- client
-			conn.Close()
-		}()
+		// Goroutine Read Loop + Pong Deadline Reset (Zombie Cleanup Guard)
+		defer client.close()
+
+		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+		conn.SetPongHandler(func(string) error {
+			_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+			return nil
+		})
+
 		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
 				break
 			}
 		}

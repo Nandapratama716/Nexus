@@ -24,7 +24,7 @@ export interface ReceiptData {
 /**
  * Generates formatted text layout for 58mm / 80mm ESC/POS Thermal Receipt Printers.
  */
-export function generateThermalReceiptText(data: ReceiptData): str {
+export function generateThermalReceiptText(data: ReceiptData): string {
   const dateStr = data.dateStr || new Date().toLocaleString("id-ID");
   const line = "--------------------------------";
   const doubleLine = "================================";

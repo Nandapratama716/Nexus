@@ -3,6 +3,7 @@ import { create } from "zustand";
 export interface MenuItem {
   id: string;
   name: string;
+  description?: string;
   price: number;
   image_url?: string;
   category: string;
