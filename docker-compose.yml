@@ -63,6 +63,34 @@ services:
     depends_on:
       - postgres
 
+  # Phase 4.1: Automated PostgreSQL Backup — daily/weekly/monthly retention
+  pg-backup:
+    image: prodrigestivill/postgres-backup-local:16
+    container_name: nexus-pg-backup
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      SCHEDULE: "@daily"            # Backup setiap hari jam 02:00 UTC
+      BACKUP_KEEP_DAYS: "7"         # Simpan 7 backup harian terakhir
+      BACKUP_KEEP_WEEKS: "4"        # Simpan 4 backup mingguan terakhir
+      BACKUP_KEEP_MONTHS: "3"       # Simpan 3 backup bulanan terakhir
+      POSTGRES_EXTRA_OPTS: "-Z9"    # gzip level 9 (kompresi maksimal)
+    volumes:
+      - nexus_backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "ls /backups/last* 2>/dev/null || exit 0"]
+      interval: 1h
+      timeout: 10s
+      retries: 1
+
 volumes:
   nexus_postgres_data:
   nexus_redis_data:
+  nexus_backups:
