@@ -10,7 +10,7 @@
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Store-FF6F00?style=flat)](https://www.trychroma.com/)
 [![Redis](https://img.shields.io/badge/Redis-Streams_7-DC382D?style=flat&logo=redis)](https://redis.io/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat&logo=postgresql)](https://www.postgresql.org/)
-[![Tests](https://img.shields.io/badge/Tests-39_Passing-2EA44F?style=flat)](#automated-test-suite)
+[![Tests](https://img.shields.io/badge/Tests-22_Passing-2EA44F?style=flat)](#automated-test-suite)
 
 ---
 
@@ -21,9 +21,10 @@ Traditional Point of Sale (POS) systems are rigid database wrappers. They strugg
 **Nexus** solves this by separating transactional workloads from AI processing:
 
 - **Zero-Latency Ordering:** A lightweight, compiled **Go Core Service** handles orders, menu CRUD, and payment webhooks with minimal overhead.
-- **Instant Kitchen Dispatch:** Orders are pushed via **In-Memory WebSockets** to the Kitchen Display System (KDS) instantly upon checkout.
+- **Instant Kitchen Dispatch:** Orders are pushed via **In-Memory WebSockets** to the Kitchen Display System (KDS) instantly upon checkout, with auto-reconnect and resync-on-reconnect logic.
 - **Event-Driven AI Sync:** Menu updates in the Go core automatically emit **Redis Streams** events (`nexus:menu_stream`). A Python worker consumes these events to update vector embeddings in **ChromaDB** in real time.
 - **Context-Aware AI Assistant:** Customers and cashiers query menu items, dietary tags, and recommendations using a local **LangChain + Ollama RAG pipeline** delivered via **Server-Sent Events (SSE)**.
+- **Production-Grade Operations:** Automated daily/weekly/monthly PostgreSQL backups via Docker, PgBouncer connection pooling, and heartbeat Ping-Pong WebSocket health monitoring.
 
 ---
 
@@ -34,13 +35,17 @@ Traditional Point of Sale (POS) systems are rigid database wrappers. They strugg
 │   Mobile POS    │ ───►  │  Realtime KDS   │ ───►  │ RAG AI Assistant│
 │  Customer App   │       │ Kitchen Display │       │   SSE Stream    │
 └─────────────────┘       └─────────────────┘       └─────────────────┘
+         │                        │
+         ▼                        ▼
+ Bluetooth Thermal          WebSocket Auto-
+   Printer (ESC/POS)        Reconnect + Resync
 ```
 
 | Component              | Interface            | Description                                                                                                                |
 | ---------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| **Mobile POS**   | Expo React Native    | Table number entry, menu selection, basket management, QRIS payment screen                                                 |
-| **Admin & KDS**  | Next.js 16 Dashboard | Realtime order Kanban board (`pending` → `preparing` → `ready` → `done`), menu manager, dynamic sales analytics |
-| **AI Assistant** | FastAPI SSE Endpoint | Natural language queries on menu ingredients, prices, and recommendations using local LLM                                  |
+| **Mobile POS**   | Expo React Native    | Table ordering, basket management, QRIS/Cash payment, Bluetooth thermal receipt printing, live animated order status |
+| **Admin & KDS**  | Next.js 16 Dashboard | Realtime order Kanban, menu manager, floor plan editor, dynamic sales analytics, WebSocket KDS with auto-reconnect |
+| **AI Assistant** | FastAPI SSE Endpoint | Natural language queries on menu ingredients, prices, and recommendations using local LLM |
 
 ---
 
@@ -65,12 +70,14 @@ flowchart TD
     subgraph AIBackend["AI Microservice (:8000) — Python / FastAPI"]
         FastAPI["FastAPI Router\nPOST /api/v1/ai/chat (SSE)"]
         RAG["RAG Engine\n(LangChain + OllamaLLM)"]
-        Chroma["ChromaDB Vector Store\n(Ephemera / SentenceTransformers)"]
+        Chroma["ChromaDB Vector Store\n(Ephemeral / SentenceTransformers)"]
         Worker["Redis Stream Worker\n(XREADGROUP Consumer)"]
     end
 
-    subgraph Storage["Data Stores & Message Broker"]
+    subgraph Storage["Data Stores & Infrastructure"]
         PG[("PostgreSQL 16\n(Primary DB)")]
+        PgBouncer["PgBouncer\n(Connection Pooler :6432)"]
+        PgBackup["pg-backup\n(Daily/Weekly/Monthly)"]
         Redis[("Redis 7 Streams\nKey: nexus:menu_stream")]
         Ollama["Ollama Host (:11434)\nModel: Mistral"]
     end
@@ -82,8 +89,9 @@ flowchart TD
     Admin -->|Prisma Direct Read| PG
 
     %% Core Service Interactions
-    Fiber -->|CRUD| GORM --> PG
+    Fiber -->|CRUD via PgBouncer| GORM --> PgBouncer --> PG
     Fiber -->|Publish CRUD Events| Publisher -->|XADD| Redis
+    PgBackup -->|pg_dump :5432| PG
 
     %% AI Service Interactions
     Worker -->|XREADGROUP Consumer| Redis
@@ -122,11 +130,11 @@ flowchart TD
 
 | Service                | Language / Framework      | Key Libraries & Tools                        | Responsibilities                                      |
 | ---------------------- | ------------------------- | -------------------------------------------- | ----------------------------------------------------- |
-| **Core Backend** | Go 1.25                   | Fiber v2, GORM, go-redis, JWT                | Transactions, Menu CRUD, WebSockets, Payment Webhooks |
+| **Core Backend** | Go 1.25                   | Fiber v2, GORM, go-redis, JWT, golang-migrate | Transactions, Menu CRUD, WebSockets, Payment Webhooks, DB Migration |
 | **AI Backend**   | Python 3.11 / FastAPI     | LangChain, OllamaLLM, ChromaDB, PyJWT, httpx | RAG pipeline, Redis Streams consumer, SSE streaming   |
-| **Admin & KDS**  | TypeScript / Next.js 16   | React 19, Tailwind CSS v4, Prisma v7         | KDS WebSocket view, Menu Manager, Realtime Dashboard  |
-| **Mobile POS**   | TypeScript / React Native | Expo SDK 57, Zustand, Axios                  | Table ordering, Cart management, QRIS simulation      |
-| **Databases**    | PostgreSQL 16 & Redis 7   | GORM AutoMigrate, Redis Streams              | Relational data persistence & durable event streaming |
+| **Admin & KDS**  | TypeScript / Next.js 16   | React 19, Tailwind CSS v4, Prisma v7         | KDS WebSocket view (auto-reconnect + resync), Menu Manager, Floor Plan Editor, Realtime Dashboard |
+| **Mobile POS**   | TypeScript / React Native | Expo SDK 57, Zustand, Axios, Animated API    | Table ordering, Cart, QRIS/Cash payment, Bluetooth thermal printer, Lottie-style status animations |
+| **Infrastructure** | Docker Compose            | PostgreSQL 16, Redis 7, PgBouncer, pg-backup | DB, cache, connection pooling, automated backup & retention |
 
 ---
 
@@ -137,6 +145,7 @@ flowchart TD
 - **Protected AI Endpoint:** `POST /api/v1/ai/chat` is protected by `verify_jwt` middleware in FastAPI to prevent unauthenticated LLM token drain attacks.
 - **Configurable CORS:** Allowed origins are configurable via `ALLOWED_ORIGINS` env var on both Go and FastAPI services.
 - **Webhook Idempotency & Signature Verification:** Midtrans payment callback handler verifies signature keys (`SHA512`) and enforces idempotency on order state updates.
+- **Row-Level Security (RLS):** PostgreSQL RLS policies on all tenant tables (`orders`, `menus`, `users`) for multi-tenant data isolation.
 
 ---
 
@@ -162,9 +171,11 @@ FastAPI automatically generates interactive API documentation:
 | `PUT`    | `/api/v1/menus/:id`         | Admin JWT   | Update menu item (emits Redis Stream event)                           |
 | `DELETE` | `/api/v1/menus/:id`         | Admin JWT   | Delete menu item (emits Redis Stream event)                           |
 | `POST`   | `/api/v1/orders`            | None        | Submit new customer order                                             |
+| `GET`    | `/api/v1/orders/active`     | None        | Get all active orders (used by mobile live status tracker)            |
+| `GET`    | `/api/v1/orders/:id`        | None        | Get single order with payment status                                  |
 | `PATCH`  | `/api/v1/orders/:id/status` | None        | Update status (`pending` → `preparing` → `ready` → `done`) |
-| `POST`   | `/api/v1/payment/callback`  | Webhook Sig | Midtrans payment callback                                             |
-| `GET`    | `/ws/kds`                   | None        | WebSocket endpoint for kitchen display                                |
+| `POST`   | `/api/v1/payment/callback`  | Webhook Sig | Midtrans payment callback (SHA512 signature verified)                 |
+| `GET`    | `/ws/kds`                   | None        | WebSocket endpoint for kitchen display (supports Ping-Pong heartbeat) |
 
 #### Python AI Service (`:8000`)
 
@@ -175,45 +186,78 @@ FastAPI automatically generates interactive API documentation:
 
 ---
 
+## 🆕 Recent Feature Additions
+
+### Phase 1 — WebSocket Reliability (Backend)
+
+| Feature | Description |
+|---|---|
+| **Auto-Reconnect + Resync** | KDS frontend reconnects every 3 seconds on disconnect; pulls full order list on `onopen` to fill gaps |
+| **Heartbeat Ping-Pong** | Server sends `__ping__` every 30s; zombie connections that miss 2 pings are auto-closed |
+| **Dirty Migration Recovery** | `migrator.go` auto-clears `dirty=true` flag in `schema_migrations` before retrying |
+
+### Phase 2 — Analytics Dashboard (Frontend)
+
+| Feature | Description |
+|---|---|
+| **Analitik Penjualan** | Revenue chart (7 hari / 30 hari), top menu ranking, order status breakdown |
+| **Floor Plan Editor** | Drag-and-drop meja interaktif dengan status real-time (available / occupied) |
+
+### Phase 3 — Mobile UX Polish (React Native)
+
+| Feature | Description |
+|---|---|
+| **Skeleton Shimmer Loading** | Placeholder cards dengan pulse animation menggantikan `ActivityIndicator` saat fetch menu |
+| **Sticky Cart Bar** | Bottom bar muncul otomatis saat ada item di keranjang, collapse saat kosong |
+| **Flavor & Dietary Chips** | Filter horizontal: Pedas 🌶️, Manis 🍯, Segar/Dingin 🧊, Vegetarian 🥗 |
+| **Lottie-style Status Animations** | Per-status animated icons: pulse (pending), spin (preparing), bounce (ready) via `Animated` API |
+| **Bluetooth Thermal Printer** | ESC/POS via `react-native-bluetooth-classic`, persistent pairing (AsyncStorage), Android 12+ permissions, graceful fallback ke modal preview |
+
+### Phase 4 — Operations
+
+| Feature | Description |
+|---|---|
+| **PostgreSQL Backup** | Docker container `prodrigestivill/postgres-backup-local:16`, daily/weekly/monthly retention (7d/4w/3m), gzip-9 compression |
+| **PgBouncer Pooling** | Transaction-mode connection pooler, `MAX_CLIENT_CONN=1000`, `DEFAULT_POOL_SIZE=20` |
+| **Backup Scripts** | `scripts/backup_postgres.sh` (manual + S3 upload opsional), `scripts/restore_postgres.sh` (dengan konfirmasi `RESTORE`) |
+
+---
+
 ## 🧪 Automated Test Suite
 
-The project includes unit, integration, and state machine tests across both Go and Python services.
-
 ```bash
-# Run Go Usecase Unit Tests (15 tests)
+# Go Usecase Unit Tests (22 tests)
 cd backend/core
 go test ./usecase/... -v -count=1
 
-# Run Python Pytest Suite (26 tests)
+# Python Pytest Suite
 cd backend/ai
 .\.venv\Scripts\python -m pytest tests/ -v
 ```
 
-### Test Coverage Summary: 39/39 PASS ✅
+### Test Coverage Summary: 22/22 PASS ✅ (Go Usecase)
 
-- **Go Tests (15):** Menu CRUD validation, order price snapshotting, table-driven state machine transition rules (10 status state cases).
-- **Python Tests (24):** ChromaDB document builder, EphemeralClient isolation, Redis stream worker message dispatcher (create/update/delete/invalid JSON handling), FastAPI JWT authentication (401 vs 200 SSE stream).
+- **Go Tests (22):** Menu CRUD validation, order price snapshotting, promo + tax + service charge calculation, stock deduction + auto sold-out, table-driven state machine (7 transition cases), tenant isolation.
 
 ---
 
 ## ⚠️ Known Trade-offs & Engineering Limitations
 
-Acknowledging system boundaries and architectural trade-offs:
-
 1. **In-Memory WebSocket Hub (Single-Instance Bound)**
+   - *Current:* WebSocket Hub manages connections in memory; includes Ping-Pong heartbeat for zombie cleanup.
+   - *Upgrade Path:* Redis Pub/Sub for horizontal scaling across multiple Go replicas.
 
-   - *Current Implementation:* The Go WebSocket Hub manages active client connections in memory.
-   - *Trade-off:* Does not scale across multiple Go container replicas without pub/sub.
-   - *Upgrade Path:* Replace in-memory hub with Redis Pub/Sub for horizontal scaling across multiple instances.
 2. **Ephemeral Vector Store (In-Process ChromaDB)**
+   - *Current:* `EphemeralClient` rebuilt on startup from Go Core `/api/v1/menus` seed.
+   - *Upgrade Path:* `chromadb/chroma` container with persistent volume.
 
-   - *Current Implementation:* ChromaDB uses `EphemeralClient` (in-memory) for zero-dependency local execution.
-   - *Trade-off:* Vector index is rebuilt on startup by seeding menus from Go Core Service via HTTP GET `/api/v1/menus`.
-   - *Upgrade Path:* Deploy ChromaDB as a dedicated container (`chromadb/chroma`) with persistent volume storage.
 3. **Mock Payment Webhook**
+   - *Current:* Local mock Midtrans client; simulation button in mobile app triggers `settlement` webhook.
+   - *Upgrade Path:* Real Midtrans Sandbox Server Key in production.
 
-   - *Current Implementation:* Local mock Midtrans client for signature verification and status settlement.
-   - *Upgrade Path:* Swap mock key with actual Midtrans Sandbox Server Key in production.
+4. **Bluetooth Printer — Android Only**
+   - *Current:* `react-native-bluetooth-classic` is Android-only; iOS uses MFi/External Accessory (not implemented). Web fallback to text preview modal.
+   - *Upgrade Path:* iOS MFi printer integration via `react-native-thermal-receipt-printer-image-qr`.
 
 ---
 
@@ -237,10 +281,11 @@ cd Nexus
 cp .env.example .env
 ```
 
-### 2. Infrastructure (PostgreSQL & Redis)
+### 2. Infrastructure (PostgreSQL, Redis, PgBouncer, Backup)
 
 ```bash
 docker compose up -d
+# Containers: nexus-postgres, nexus-redis, nexus-pgbouncer, nexus-pgadmin, nexus-pg-backup
 ```
 
 ### 3. Go Core Service
@@ -249,6 +294,7 @@ docker compose up -d
 cd backend/core
 go run cmd/api/main.go
 # Server listening on http://localhost:8080
+# Auto-migration (dirty flag auto-cleared if needed)
 ```
 
 ### 4. Python AI Service
@@ -269,6 +315,7 @@ npm install
 npx prisma generate
 npm run dev
 # Dashboard at http://localhost:3000
+# KDS at http://localhost:3000/kds
 ```
 
 ### 6. Mobile POS App (Expo)
@@ -277,7 +324,55 @@ npm run dev
 cd mobile
 npm install
 npm run web  # Run in browser
-# or npm run start for Expo Go
+# or npm run start for Expo Go on device
+```
+
+### 7. Backup (Opsional — Aktifkan Container)
+
+```bash
+# Container backup sudah jalan via docker compose up -d
+# Trigger manual backup:
+docker exec nexus-pg-backup sh -c 'POSTGRES_HOST=$POSTGRES_HOST POSTGRES_DB=$POSTGRES_DB /backup.sh'
+
+# Lihat daftar backup
+docker exec nexus-pg-backup ls -lah /backups/daily/
+```
+
+---
+
+## 📁 Project Structure
+
+```
+Nexus/
+├── backend/
+│   ├── core/                   # Go Fiber REST API + WebSocket Hub
+│   │   ├── cmd/api/            # main.go entrypoint
+│   │   ├── delivery/           # HTTP handlers, WebSocket hub
+│   │   ├── domain/             # Entity definitions
+│   │   ├── infrastructure/     # DB, Redis, Midtrans, Migrator
+│   │   ├── migrations/         # golang-migrate SQL files
+│   │   ├── repository/         # GORM repository implementations
+│   │   └── usecase/            # Business logic + unit tests
+│   └── ai/                     # Python FastAPI RAG service
+│       ├── main.py
+│       ├── routers/
+│       └── tests/
+├── frontend/                   # Next.js 16 Dashboard + KDS
+│   └── src/app/
+│       ├── dashboard/          # Analitik, floor-plan, menu manager
+│       └── kds/                # Kitchen Display System
+├── mobile/                     # Expo React Native POS Client
+│   └── src/
+│       ├── screens/            # MenuScreen, CartScreen, PaymentScreen, MyOrdersScreen
+│       ├── store/              # Zustand cartStore
+│       ├── utils/              # thermalReceipt.ts, useThermalPrinter.ts
+│       └── components/         # AIChatModal
+├── scripts/                    # Operational scripts
+│   ├── backup_postgres.sh      # Manual backup + S3 upload
+│   ├── restore_postgres.sh     # Restore dengan konfirmasi
+│   └── BACKUP.md               # Dokumentasi strategi backup
+├── docker-compose.yml          # All infra: PG, Redis, PgBouncer, pgAdmin, pg-backup
+└── .env.example                # Environment template
 ```
 
 ---

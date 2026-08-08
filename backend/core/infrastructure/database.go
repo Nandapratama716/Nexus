@@ -23,7 +23,15 @@ func ConnectDB() (*gorm.DB, error) {
 		host, user, password, dbname, port)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: logger.New(
+			log.New(os.Stdout, "\r\n", log.LstdFlags),
+			logger.Config{
+				SlowThreshold:             200 * time.Millisecond, // Log query yang lambat > 200ms
+				LogLevel:                  logger.Warn,            // Hanya warn + error (hemat log)
+				IgnoreRecordNotFoundError: true,                   // Jangan log ErrRecordNotFound
+				Colorful:                  false,
+			},
+		),
 	})
 
 	if err != nil {
@@ -35,14 +43,14 @@ func ConnectDB() (*gorm.DB, error) {
 		return nil, fmt.Errorf("gagal mendapatkan sql.DB dari GORM: %w", err)
 	}
 
-	// Application-Level Connection Pooling (database/sql)
-	// Mencegah kebocoran koneksi dan kehabisan max_connections di PostgreSQL
-	sqlDB.SetMaxOpenConns(25)                  // Maksimal 25 koneksi aktif simultan
-	sqlDB.SetMaxIdleConns(10)                  // Maksimal 10 koneksi idle tetap terbuka
-	sqlDB.SetConnMaxLifetime(30 * time.Minute) // Daur ulang koneksi setiap 30 menit
-	sqlDB.SetConnMaxIdleTime(5 * time.Minute)  // Tutup koneksi idle jika tidak terpakai > 5 menit
+	// Roadmap 2.5: Application-Level Connection Pooling
+	// MaxOpenConns=50 sesuai kapasitas PgBouncer DEFAULT_POOL_SIZE=20 × 2 instance Go
+	sqlDB.SetMaxOpenConns(50)                  // Maks 50 koneksi aktif simultan
+	sqlDB.SetMaxIdleConns(10)                  // Maks 10 koneksi idle
+	sqlDB.SetConnMaxLifetime(30 * time.Minute) // Daur ulang setiap 30 menit
+	sqlDB.SetConnMaxIdleTime(5 * time.Minute)  // Tutup idle jika tidak terpakai > 5 menit
 
-	log.Println("Berhasil terhubung ke PostgreSQL (Application Connection Pool disetel: MaxOpen=25, MaxIdle=10)")
+	log.Println("Berhasil terhubung ke PostgreSQL (Connection Pool: MaxOpen=50, MaxIdle=10, Lifetime=30m)")
 	return db, nil
 }
 
